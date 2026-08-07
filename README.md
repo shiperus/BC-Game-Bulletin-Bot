@@ -1,15 +1,17 @@
 # BC Gaming Bot
 
-A self-hosted Discord bot that keeps a channel up to date with trending
+A self-hosted Discord bot that keeps your Discord channels up to date with trending
 gaming news — without you having to scroll Reddit yourself.
 
 Every few hours it pulls hot posts from a set of gaming subreddits (via
 Reddit's public RSS feeds, so no API key is needed), merges duplicate
-coverage of the same story, matches each story to a proper article from
-gaming news outlets (IGN, Polygon, PC Gamer, etc.), and posts the top
-handful to a Discord channel as embeds. A local SQLite database remembers
-what was already posted, so the same story never shows up twice — even if
-it's reworded. Lightweight enough to run 24/7 on a Raspberry Pi.
+coverage of the same story, and cross-checks each story against recent
+articles from gaming news outlets (IGN, Polygon, PC Gamer, etc.) as a
+corroboration signal. Items are routed to the Discord channel matching
+their category — currently general news and OpenCritic review threads
+each go to their own channel. A local SQLite database remembers what was
+already posted, so the same story never shows up twice — even if it's
+reworded. Lightweight enough to run 24/7 on a Raspberry Pi.
 
 ## Setup
 
@@ -72,11 +74,14 @@ python -m bc_bot.dry_run
    trailer, teaser, or release-date confirmation get a confidence boost, so
    announcement news ranks above reviews, discounts, patch notes, etc.
 4. **Enrich** — fuzzy-match each trending topic against recent articles from
-   the configured gaming RSS feeds; if no article matches, the original
-   Reddit link is used instead.
-5. **Post** — the top items (by confidence, then engagement) that haven't
-   been posted in the last `RETENTION_DAYS` are sent to the Discord channel
-   as embeds.
+   the configured gaming RSS feeds; a match adds a confidence boost as a
+   corroboration signal, but the posted link always stays the original
+   Reddit-submitted link.
+5. **Post** — items that haven't been posted in the last `RETENTION_DAYS`
+   are routed by category: OpenCritic review-thread items go to the review
+   channel (`DISCORD_REVIEW_CHANNEL_ID`) uncapped, while everything else is
+   ranked by confidence then engagement and the top `POSTS_PER_CYCLE` go to
+   the news channel (`DISCORD_NEWS_CHANNEL_ID`).
 
 Any failure during a cycle (API outage, rate limit, network blip) is logged
 and swallowed; the bot simply waits for the next scheduled cycle instead of
@@ -132,5 +137,5 @@ crashing.
 | `RSS_FEEDS` | IGN, Polygon, PC Gamer, Eurogamer, GameSpot, VG247, Rock Paper Shotgun, PCGamesN | Comma-separated gaming news RSS feed URLs |
 | `CHECK_INTERVAL_HOURS` | `4` | Hours between cycles |
 | `RETENTION_DAYS` | `30` | How long posted-item history (and dedup window) is kept |
-| `POSTS_PER_CYCLE` | `5` | Max items posted per cycle |
+| `POSTS_PER_CYCLE` | `5` | Max news items posted per cycle to `DISCORD_NEWS_CHANNEL_ID` (review items aren't capped) |
 | `DB_PATH` | `bc_bot.db` | SQLite file location |
