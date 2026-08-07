@@ -49,6 +49,7 @@ def run_cycle(config: Config, store: Store) -> None:
             article_url=item.article_url,
             article_title=item.article_title,
             opencritic_stats=item.opencritic_stats,
+            raw_data_source=item.raw_data_source
         )
     
     for i, item in enumerate(review_items_to_post, 1):
@@ -66,6 +67,7 @@ def run_cycle(config: Config, store: Store) -> None:
             article_url=item.article_url,
             article_title=item.article_title,
             opencritic_stats=item.opencritic_stats,
+            raw_data_source=item.raw_data_source
         )
 
     removed = store.cleanup_old(config.retention_days)

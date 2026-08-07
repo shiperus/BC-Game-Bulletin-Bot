@@ -16,6 +16,7 @@ class TrendingItem:
     article_title: str | None = None
     skip_enrichment: bool = False
     opencritic_stats: str | None = None
+    raw_data_source: str | None = None
 
     def __post_init__(self) -> None:
         if not self.sources:

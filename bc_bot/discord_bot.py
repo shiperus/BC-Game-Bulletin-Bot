@@ -72,6 +72,7 @@ class BcGamingBot(discord.Client):
                 article_url=item.article_url,
                 article_title=item.article_title,
                 opencritic_stats=item.opencritic_stats,
+                raw_data_source=item.raw_data_source
             )
         
         for item in review_items_to_post:
@@ -87,6 +88,7 @@ class BcGamingBot(discord.Client):
                 article_url=item.article_url,
                 article_title=item.article_title,
                 opencritic_stats=item.opencritic_stats,
+                raw_data_source=item.raw_data_source
             )
 
         removed = self.store.cleanup_old(self.config.retention_days)

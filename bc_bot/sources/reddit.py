@@ -190,6 +190,7 @@ def fetch_trending(config: Config) -> list[TrendingItem]:
                         origin=f"r/{subreddit_name}",
                         skip_enrichment=is_review_thread,
                         opencritic_stats=opencritic_stats,
+                        raw_data_source=str(entry.get("summary", ""))
                     )
                 )
 

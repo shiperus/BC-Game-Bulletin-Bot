@@ -31,6 +31,7 @@ _MIGRATION_COLUMNS = {
     "article_url": "TEXT",
     "article_title": "TEXT",
     "opencritic_stats": "TEXT",
+    "raw_data_source": "TEXT"
 }
 
 
@@ -80,13 +81,14 @@ class Store:
         article_url: str | None = None,
         article_title: str | None = None,
         opencritic_stats: str | None = None,
+        raw_data_source: str | None = None
     ) -> None:
         with self._connect() as conn:
             conn.execute(
                 "INSERT INTO posted_items "
                 "(title, url, source, confidence, posted_at, origin, engagement, "
-                "reddit_url, article_url, article_title, opencritic_stats) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "reddit_url, article_url, article_title, opencritic_stats, raw_data_source) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     title,
                     url,
@@ -99,6 +101,7 @@ class Store:
                     article_url,
                     article_title,
                     opencritic_stats,
+                    raw_data_source
                 ),
             )
 
