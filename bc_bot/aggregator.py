@@ -81,8 +81,6 @@ def enrich_with_articles(items: list[TrendingItem], articles: list[Article]) -> 
             continue
         match = rss.find_best_match(item.title, articles)
         if match:
-            item.article_url = match.link
-            item.article_title = match.title
             item.confidence += 1
 
 
