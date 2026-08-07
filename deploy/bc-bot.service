@@ -1,5 +1,5 @@
 [Unit]
-Description=BC Gaming Bot
+Description=BC Game Bulletin Bot
 After=network-online.target
 Wants=network-online.target
 

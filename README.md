@@ -1,4 +1,4 @@
-# BC Gaming Bot
+# BC Game Bulletin Bot
 
 A self-hosted Discord bot that keeps your Discord channels up to date with trending
 gaming news — without you having to scroll Reddit yourself.
