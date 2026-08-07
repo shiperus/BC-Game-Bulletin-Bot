@@ -43,7 +43,7 @@ def _parse_weights(value: str) -> dict[str, float]:
 
 def _env_or_default(name: str, default: str) -> str:
     # os.environ.get(name, default) only falls back when the key is absent, not when
-    # it's present-but-blank (e.g. "DISCORD_CHANNEL_ID=" left empty in .env), so treat
+    # it's present-but-blank (e.g. "DISCORD_NEWS_CHANNEL_ID=" left empty in .env), so treat
     # blank the same as unset.
     return os.environ.get(name) or default
 
@@ -60,8 +60,11 @@ class Config:
     # Only required to actually run the live bot (see require_discord_credentials());
     # left optional so the dry-run pipeline can be tested without a Discord app set up.
     discord_token: str = field(default_factory=lambda: _env_or_default("DISCORD_TOKEN", ""))
-    discord_channel_id: int = field(
-        default_factory=lambda: int(_env_or_default("DISCORD_CHANNEL_ID", "0"))
+    discord_news_channel_id: int = field(
+        default_factory=lambda: int(_env_or_default("DISCORD_NEWS_CHANNEL_ID", "0"))
+    )
+    discord_review_channel_id: int = field(
+        default_factory=lambda: int(_env_or_default("DISCORD_REVIEW_CHANNEL_ID", "0"))
     )
 
     # Reddit's public RSS feeds require a distinctive User-Agent but no API key/app.
@@ -96,8 +99,8 @@ class Config:
     )
 
     def require_discord_credentials(self) -> None:
-        if not self.discord_token or not self.discord_channel_id:
+        if not self.discord_token or not self.discord_news_channel_id or not self.discord_review_channel_id:
             raise RuntimeError(
-                "DISCORD_TOKEN and DISCORD_CHANNEL_ID must be set to run the live bot "
+                "DISCORD_TOKEN, DISCORD_NEWS_CHANNEL_ID and DISCORD_REVIEW_CHANNEL_ID must be set to run the live bot "
                 "(use bc_bot.dry_run to test without them)"
             )

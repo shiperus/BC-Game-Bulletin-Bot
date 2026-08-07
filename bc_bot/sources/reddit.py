@@ -12,7 +12,6 @@ from bc_bot.models import TrendingItem
 
 logger = logging.getLogger(__name__)
 
-POSTS_PER_SUBREDDIT = 10
 DELAY_BETWEEN_REQUESTS_SECONDS = 60
 MAX_RETRIES_ON_RATE_LIMIT = 3
 RETRY_BACKOFF_BASE_SECONDS = 30
@@ -156,7 +155,8 @@ def fetch_trending(config: Config) -> list[TrendingItem]:
             skipped_meta_threads = 0
             skipped_image_links = 0
             weight = config.subreddit_weights.get(subreddit_name, 1.0)
-            for rank, entry in enumerate(feed.entries[:POSTS_PER_SUBREDDIT]):
+            total_feed_entries = len(feed.entries)
+            for rank, entry in enumerate(feed.entries):
                 title = entry.get("title", "")
                 comments_url = entry.get("link", "")
                 submitted_url = _extract_submitted_url(entry.get("summary", ""))
@@ -186,7 +186,7 @@ def fetch_trending(config: Config) -> list[TrendingItem]:
                         title=title,
                         url=item_url,
                         source="reddit",
-                        engagement=(POSTS_PER_SUBREDDIT - rank) * weight,
+                        engagement=(total_feed_entries - rank) * weight,
                         origin=f"r/{subreddit_name}",
                         skip_enrichment=is_review_thread,
                         opencritic_stats=opencritic_stats,

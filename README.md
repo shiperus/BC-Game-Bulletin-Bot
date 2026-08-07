@@ -23,7 +23,7 @@ it's reworded. Lightweight enough to run 24/7 on a Raspberry Pi.
    ```
 
 2. Copy `.env.example` to `.env` and fill in:
-   - `DISCORD_TOKEN` / `DISCORD_CHANNEL_ID` — create a bot at
+   - `DISCORD_TOKEN` / `DISCORD_NEWS_CHANNEL_ID` / `DISCORD_REVIEW_CHANNEL_ID` — create a bot at
      https://discord.com/developers/applications, invite it to your server
      with the `Send Messages` and `Embed Links` permissions, and copy the
      target channel's ID (enable Developer Mode in Discord to copy IDs).
@@ -51,7 +51,7 @@ it's reworded. Lightweight enough to run 24/7 on a Raspberry Pi.
 10 minutes and prints what *would* be posted to the console. It records
 posted items to the database (so duplicate suppression behaves exactly like
 production across cycles) but never touches Discord. `DISCORD_TOKEN` /
-`DISCORD_CHANNEL_ID` aren't required for this. Stop it with Ctrl+C.
+`DISCORD_NEWS_CHANNEL_ID` / `DISCORD_REVIEW_CHANNEL_ID` aren't required for this. Stop it with Ctrl+C.
 
 ```
 python -m bc_bot.dry_run
@@ -98,7 +98,7 @@ crashing.
    cp .env.example .env
    ```
 
-2. Fill in `.env` with real `DISCORD_TOKEN` / `DISCORD_CHANNEL_ID` (see
+2. Fill in `.env` with real `DISCORD_TOKEN` / `DISCORD_NEWS_CHANNEL_ID` / `DISCORD_REVIEW_CHANNEL_ID` (see
    Setup above), then verify it works before wiring up the service:
 
    ```

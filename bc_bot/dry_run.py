@@ -25,10 +25,12 @@ def run_cycle(config: Config, store: Store) -> None:
 
     recent_posts = store.recent_posts(config.retention_days)
     fresh = aggregator.select_fresh(ranked, recent_posts)
-    to_post = fresh[: config.posts_per_cycle]
+    review_items_to_post = [i for i in fresh if i.opencritic_stats is not None]
+    remaining_items = [i for i in fresh if i.opencritic_stats is None]
+    news_items_to_post = remaining_items[: config.posts_per_cycle]
 
-    print(f"=== DRY RUN: {len(to_post)} item(s) would be posted (of {len(ranked)} candidates) ===\n")
-    for i, item in enumerate(to_post, 1):
+    print(f"=== DRY RUN: {len(news_items_to_post)} news item(s) would be posted (of {len(ranked)} candidates) and {len(review_items_to_post)} of review items ===\n")
+    for i, item in enumerate(news_items_to_post, 1):
         print(f"{i}. {item.display_title}")
         print(f"   Link: {item.link}")
         print(
@@ -48,10 +50,28 @@ def run_cycle(config: Config, store: Store) -> None:
             article_title=item.article_title,
             opencritic_stats=item.opencritic_stats,
         )
+    
+    for i, item in enumerate(review_items_to_post, 1):
+        print(f"{i}. {item.display_title}")
+        print(f"   Link: {item.link}")
+        print()
+        store.record_posted(
+            item.title,
+            item.link,
+            "+".join(sorted(item.sources)),
+            item.confidence,
+            origin=item.origin,
+            engagement=item.engagement,
+            reddit_url=item.url,
+            article_url=item.article_url,
+            article_title=item.article_title,
+            opencritic_stats=item.opencritic_stats,
+        )
 
     removed = store.cleanup_old(config.retention_days)
     print(
-        f"Recorded {len(to_post)} item(s) to the database (nothing was posted to Discord). "
+        f"Recorded {len(news_items_to_post)} news item(s) to the database (nothing was posted to Discord). "
+        f"Recorded {len(review_items_to_post)} review item(s) to the database (nothing was posted to Discord). "
         f"Cleaned up {removed} old record(s).\n"
     )
 

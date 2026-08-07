@@ -49,14 +49,33 @@ class BcGamingBot(discord.Client):
 
         recent_posts = self.store.recent_posts(self.config.retention_days)
         fresh = aggregator.select_fresh(ranked, recent_posts)
-        to_post = fresh[: self.config.posts_per_cycle]
+        review_items_to_post = [i for i in fresh if i.opencritic_stats is not None]
+        remaining_items = [i for i in fresh if i.opencritic_stats is None]
+        news_items_to_post = remaining_items[: self.config.posts_per_cycle]
+        channel_news = self.get_channel(self.config.discord_news_channel_id)
+        channel_review = self.get_channel(self.config.discord_review_channel_id)
+        if channel_news is None:
+            channel_news = await self.fetch_channel(self.config.discord_news_channel_id)
+        if channel_review is None:
+            channel_review = await self.fetch_channel(self.config.discord_review_channel_id)
 
-        channel = self.get_channel(self.config.discord_channel_id)
-        if channel is None:
-            channel = await self.fetch_channel(self.config.discord_channel_id)
-
-        for item in to_post:
-            await self._post_item(channel, item)
+        for item in news_items_to_post:
+            await self._post_item(channel_news, item)
+            self.store.record_posted(
+                item.title,
+                item.link,
+                "+".join(sorted(item.sources)),
+                item.confidence,
+                origin=item.origin,
+                engagement=item.engagement,
+                reddit_url=item.url,
+                article_url=item.article_url,
+                article_title=item.article_title,
+                opencritic_stats=item.opencritic_stats,
+            )
+        
+        for item in review_items_to_post:
+            await self._post_item(channel_review, item)
             self.store.record_posted(
                 item.title,
                 item.link,
@@ -72,7 +91,7 @@ class BcGamingBot(discord.Client):
 
         removed = self.store.cleanup_old(self.config.retention_days)
         logger.info(
-            "Cycle complete: posted %d items, cleaned up %d old records", len(to_post), removed
+            "Cycle complete: posted %d news items, posted %d review items, cleaned up %d old records", len(news_items_to_post), len(review_items_to_post), removed
         )
 
     async def _post_item(self, channel: discord.abc.Messageable, item: TrendingItem) -> None:

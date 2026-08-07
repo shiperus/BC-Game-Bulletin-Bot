@@ -12,7 +12,7 @@ python -m venv .venv
 pip install -r requirements.txt
 ```
 
-Copy `.env.example` to `.env` and fill in `DISCORD_TOKEN` / `DISCORD_CHANNEL_ID` before running the live bot; `REDDIT_USER_AGENT` needs no API key, just a distinctive string.
+Copy `.env.example` to `.env` and fill in `DISCORD_TOKEN` / `DISCORD_NEWS_CHANNEL_ID` / `DISCORD_REVIEW_CHANNEL_ID` before running the live bot; `REDDIT_USER_AGENT` needs no API key, just a distinctive string.
 
 Run the live bot (posts to Discord on a `CHECK_INTERVAL_HOURS` loop, default 4h):
 
