@@ -8,7 +8,7 @@ Reddit's public RSS feeds, so no API key is needed), merges duplicate
 coverage of the same story, and cross-checks each story against recent
 articles from gaming news outlets (IGN, Polygon, PC Gamer, etc.) as a
 corroboration signal. Items are routed to the Discord channel matching
-their category — currently general news and OpenCritic review threads
+their category — currently general news, OpenCritic review threads and Trailer threads
 each go to their own channel. A local SQLite database remembers what was
 already posted, so the same story never shows up twice — even if it's
 reworded. Lightweight enough to run 24/7 on a Raspberry Pi.
@@ -25,7 +25,7 @@ reworded. Lightweight enough to run 24/7 on a Raspberry Pi.
    ```
 
 2. Copy `.env.example` to `.env` and fill in:
-   - `DISCORD_TOKEN` / `DISCORD_NEWS_CHANNEL_ID` / `DISCORD_REVIEW_CHANNEL_ID` — create a bot at
+   - `DISCORD_TOKEN` / `DISCORD_NEWS_CHANNEL_ID` / `DISCORD_REVIEW_CHANNEL_ID` / `DISCORD_TRAILER_CHANNEL_ID` — create a bot at
      https://discord.com/developers/applications, invite it to your server
      with the `Send Messages` and `Embed Links` permissions, and copy the
      target channel's ID (enable Developer Mode in Discord to copy IDs).
@@ -53,7 +53,7 @@ reworded. Lightweight enough to run 24/7 on a Raspberry Pi.
 10 minutes and prints what *would* be posted to the console. It records
 posted items to the database (so duplicate suppression behaves exactly like
 production across cycles) but never touches Discord. `DISCORD_TOKEN` /
-`DISCORD_NEWS_CHANNEL_ID` / `DISCORD_REVIEW_CHANNEL_ID` aren't required for this. Stop it with Ctrl+C.
+`DISCORD_NEWS_CHANNEL_ID` / `DISCORD_REVIEW_CHANNEL_ID` / `DISCORD_TRAILER_CHANNEL_ID` aren't required for this. Stop it with Ctrl+C.
 
 ```
 python -m bc_bot.dry_run
@@ -79,7 +79,8 @@ python -m bc_bot.dry_run
    Reddit-submitted link.
 5. **Post** — items that haven't been posted in the last `RETENTION_DAYS`
    are routed by category: OpenCritic review-thread items go to the review
-   channel (`DISCORD_REVIEW_CHANNEL_ID`) uncapped, while everything else is
+   channel (`DISCORD_REVIEW_CHANNEL_ID`) uncapped, Trailer thread items go to 
+   the trailer channel (`DISCORD_TRAILER_CHANNEL_ID`) uncapped, while everything else is
    ranked by confidence then engagement and the top `POSTS_PER_CYCLE` go to
    the news channel (`DISCORD_NEWS_CHANNEL_ID`).
 
@@ -103,7 +104,7 @@ crashing.
    cp .env.example .env
    ```
 
-2. Fill in `.env` with real `DISCORD_TOKEN` / `DISCORD_NEWS_CHANNEL_ID` / `DISCORD_REVIEW_CHANNEL_ID` (see
+2. Fill in `.env` with real `DISCORD_TOKEN` / `DISCORD_NEWS_CHANNEL_ID` / `DISCORD_REVIEW_CHANNEL_ID` / `DISCORD_TRAILER_CHANNEL_ID` (see
    Setup above), then verify it works before wiring up the service:
 
    ```
@@ -137,5 +138,5 @@ crashing.
 | `RSS_FEEDS` | IGN, Polygon, PC Gamer, Eurogamer, GameSpot, VG247, Rock Paper Shotgun, PCGamesN | Comma-separated gaming news RSS feed URLs |
 | `CHECK_INTERVAL_HOURS` | `4` | Hours between cycles |
 | `RETENTION_DAYS` | `30` | How long posted-item history (and dedup window) is kept |
-| `POSTS_PER_CYCLE` | `5` | Max news items posted per cycle to `DISCORD_NEWS_CHANNEL_ID` (review items aren't capped) |
+| `POSTS_PER_CYCLE` | `5` | Max news items posted per cycle to `DISCORD_NEWS_CHANNEL_ID` (review, trailer items aren't capped) |
 | `DB_PATH` | `bc_bot.db` | SQLite file location |

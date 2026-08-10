@@ -73,6 +73,11 @@ _REVIEW_THREAD_PATTERN = re.compile(r"\breview(s)?\s+(mega)?thread\b", re.IGNORE
 _OPENCRITIC_LINK_PATTERN = re.compile(
     r'href="(https://opencritic\.com/game/[^"]+)">([^<]+)</a>'
 )
+
+# Filter for Trailer thread and youtube links inside the thread
+_YOUTUBE_HOST_PATTERN = re.compile(r"^https?://(www\.|m\.)?(youtube\.com|youtu\.be)/", re.IGNORECASE)
+_TRAILER_TITLE_PATTERN = re.compile(r"\btrailer\b", re.IGNORECASE)
+
 # Each subreddit's review-thread template words the OpenCritic link text a bit
 # differently -- e.g. r/Games: "OpenCritic - 88 average - 95% recommended - 58
 # reviews"; r/gaming: "OpenCritic: 88 Average - 96% Recommend" (no review count).
@@ -173,6 +178,7 @@ def fetch_trending(config: Config) -> list[TrendingItem]:
                     continue
 
                 is_review_thread = bool(_REVIEW_THREAD_PATTERN.search(title))
+                is_trailer_thread = bool(submitted_url and _TRAILER_TITLE_PATTERN.search(title) and _YOUTUBE_HOST_PATTERN.search(submitted_url))
                 opencritic_stats = None
                 if is_review_thread:
                     opencritic = _extract_opencritic(entry.get("summary", ""))
@@ -188,9 +194,10 @@ def fetch_trending(config: Config) -> list[TrendingItem]:
                         source="reddit",
                         engagement=(total_feed_entries - rank) * weight,
                         origin=f"r/{subreddit_name}",
-                        skip_enrichment=is_review_thread,
+                        skip_enrichment=is_review_thread or is_trailer_thread,
                         opencritic_stats=opencritic_stats,
-                        raw_data_source=str(entry.get("summary", ""))
+                        raw_data_source=str(entry.get("summary", "")),
+                        is_trailer_thread=is_trailer_thread
                     )
                 )
 

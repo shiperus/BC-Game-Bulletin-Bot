@@ -66,6 +66,9 @@ class Config:
     discord_review_channel_id: int = field(
         default_factory=lambda: int(_env_or_default("DISCORD_REVIEW_CHANNEL_ID", "0"))
     )
+    discord_trailer_channel_id: int = field(
+        default_factory=lambda: int(_env_or_default("DISCORD_TRAILER_CHANNEL_ID", "0"))
+    )
 
     # Reddit's public RSS feeds require a distinctive User-Agent but no API key/app.
     reddit_user_agent: str = field(
@@ -99,8 +102,8 @@ class Config:
     )
 
     def require_discord_credentials(self) -> None:
-        if not self.discord_token or not self.discord_news_channel_id or not self.discord_review_channel_id:
+        if not self.discord_token or not self.discord_news_channel_id or not self.discord_review_channel_id or not self.discord_trailer_channel_id:
             raise RuntimeError(
-                "DISCORD_TOKEN, DISCORD_NEWS_CHANNEL_ID and DISCORD_REVIEW_CHANNEL_ID must be set to run the live bot "
+                "DISCORD_TOKEN, DISCORD_NEWS_CHANNEL_ID, DISCORD_REVIEW_CHANNEL_ID and DISCORD_TRAILER_CHANNEL_ID must be set to run the live bot "
                 "(use bc_bot.dry_run to test without them)"
             )
