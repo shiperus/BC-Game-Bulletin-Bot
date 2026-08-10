@@ -7,6 +7,7 @@ from bc_bot import aggregator
 from bc_bot.config import Config
 from bc_bot.db import Store
 from bc_bot.sources import reddit, rss
+from datetime import datetime, timezone
 
 logger = logging.getLogger(__name__)
 
@@ -14,7 +15,8 @@ CHECK_INTERVAL_SECONDS = 10 * 60
 
 
 def run_cycle(config: Config, store: Store) -> None:
-    reddit_items = reddit.fetch_trending(config)
+    cycle_started_at = datetime.now(timezone.utc).isoformat()
+    (reddit_items, raw_feeds) = reddit.fetch_trending(config)
     articles = rss.fetch_articles(config)
     print(f"\nFetched {len(reddit_items)} Reddit posts, {len(articles)} RSS articles.\n")
 
@@ -31,6 +33,7 @@ def run_cycle(config: Config, store: Store) -> None:
     news_items_to_post = remaining_items[: config.posts_per_cycle]
 
     print(f"=== DRY RUN: {len(news_items_to_post)} news item(s) would be posted (of {len(ranked)} candidates), {len(review_items_to_post)} of review items and {len(trailer_items_to_post)} of trailer items ===\n")
+    store.record_cycle_raw_feeds(cycle_started_at, raw_feeds)
     for i, item in enumerate(news_items_to_post, 1):
         print(f"{i}. {item.display_title}")
         print(f"   Link: {item.link}")
@@ -50,7 +53,8 @@ def run_cycle(config: Config, store: Store) -> None:
             article_url=item.article_url,
             article_title=item.article_title,
             opencritic_stats=item.opencritic_stats,
-            raw_data_source=item.raw_data_source
+            raw_data_source=item.raw_data_source,
+            cycle_started_at=cycle_started_at
         )
     
     for i, item in enumerate(review_items_to_post, 1):
@@ -68,7 +72,8 @@ def run_cycle(config: Config, store: Store) -> None:
             article_url=item.article_url,
             article_title=item.article_title,
             opencritic_stats=item.opencritic_stats,
-            raw_data_source=item.raw_data_source
+            raw_data_source=item.raw_data_source,
+            cycle_started_at=cycle_started_at
         )
     
     for i, item in enumerate(trailer_items_to_post, 1):
@@ -86,7 +91,8 @@ def run_cycle(config: Config, store: Store) -> None:
             article_url=item.article_url,
             article_title=item.article_title,
             opencritic_stats=item.opencritic_stats,
-            raw_data_source=item.raw_data_source
+            raw_data_source=item.raw_data_source,
+            cycle_started_at=cycle_started_at
         )
 
     removed = store.cleanup_old(config.retention_days)
@@ -97,6 +103,10 @@ def run_cycle(config: Config, store: Store) -> None:
         f"Cleaned up {removed} old record(s).\n"
     )
 
+    removed_cycle_raw_feeds = store.cleanup_old_cycle_data(config.retention_days)
+    print(
+        f"Cleaned up {removed_cycle_raw_feeds} old cycle_raw_feeds record(s).\n"
+    )
 
 def main() -> None:
     logging.basicConfig(

@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import re
 import time
+import requests
 from html import unescape
 
 import feedparser
@@ -137,7 +138,7 @@ def _is_meta_thread(title: str, is_self_post: bool) -> bool:
     return bool(_DAY_OF_WEEK_PATTERN.search(title))
 
 
-def fetch_trending(config: Config) -> list[TrendingItem]:
+def fetch_trending(config: Config) -> tuple[list[TrendingItem], dict[str, str]]:
     """Fetch hot posts via Reddit's public Atom feed (reddit.com/r/<sub>/hot/.rss).
 
     Reddit's official API now gates app creation behind an approval process, and the
@@ -146,14 +147,19 @@ def fetch_trending(config: Config) -> list[TrendingItem]:
     approximated by feed position (already hot-ranked by Reddit).
     """
     items: list[TrendingItem] = []
-
+    raw_feeds: dict[str, str] = {}
+    
     for index, subreddit_name in enumerate(config.subreddits):
         if index > 0:
             time.sleep(DELAY_BETWEEN_REQUESTS_SECONDS)
 
         url = f"https://www.reddit.com/r/{subreddit_name}/hot/.rss"
         try:
-            feed = _parse_with_retry(url, config.reddit_user_agent, subreddit_name)
+            result = _parse_with_retry(url, config.reddit_user_agent, subreddit_name)
+            if result is None:
+                continue
+            feed, raw_text = result
+            raw_feeds[subreddit_name] = raw_text
             if feed is None:
                 continue
 
@@ -216,14 +222,13 @@ def fetch_trending(config: Config) -> list[TrendingItem]:
         except Exception:
             logger.exception("Failed to fetch trending posts from r/%s", subreddit_name)
 
-    return [item for item in items if item.title and item.url]
+    return [item for item in items if item.title and item.url], raw_feeds
 
-
-def _parse_with_retry(url: str, user_agent: str, subreddit_name: str):
+def _parse_with_retry(url: str, user_agent: str, subreddit_name: str) -> tuple[feedparser.FeedParserDict, str] | None:
     """Parse a subreddit feed, retrying with backoff on HTTP 429."""
     for attempt in range(MAX_RETRIES_ON_RATE_LIMIT + 1):
-        feed = feedparser.parse(url, agent=user_agent)
-        status = feed.get("status")
+        response = requests.get(url, headers={"User-Agent": user_agent})
+        status = response.status_code
 
         if status == 429 and attempt < MAX_RETRIES_ON_RATE_LIMIT:
             wait_seconds = RETRY_BACKOFF_BASE_SECONDS * (attempt + 1)
@@ -240,6 +245,7 @@ def _parse_with_retry(url: str, user_agent: str, subreddit_name: str):
         if status and status != 200:
             logger.warning("r/%s returned HTTP %s, skipping", subreddit_name, status)
             return None
+        feed = feedparser.parse(response.text)
         if feed.bozo and not feed.entries:
             raise feed.bozo_exception
 
@@ -252,6 +258,6 @@ def _parse_with_retry(url: str, user_agent: str, subreddit_name: str):
                 attempt,
                 len(feed.entries),
             )
-        return feed
+        return feed, response.text
 
     return None

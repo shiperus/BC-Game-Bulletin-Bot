@@ -16,6 +16,14 @@ CREATE TABLE IF NOT EXISTS posted_items (
     posted_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_posted_at ON posted_items (posted_at);
+
+CREATE TABLE IF NOT EXISTS cycle_raw_feeds (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    cycle_started_at TEXT NOT NULL,
+    subreddit TEXT NOT NULL,
+    raw_feed TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_cycle_raw_feeds_cycle_started_at ON cycle_raw_feeds (cycle_started_at);
 """
 
 # Debugging columns added after the initial release, capturing the full picture of
@@ -31,7 +39,8 @@ _MIGRATION_COLUMNS = {
     "article_url": "TEXT",
     "article_title": "TEXT",
     "opencritic_stats": "TEXT",
-    "raw_data_source": "TEXT"
+    "raw_data_source": "TEXT",
+    "cycle_started_at": "TEXT"
 }
 
 
@@ -81,14 +90,15 @@ class Store:
         article_url: str | None = None,
         article_title: str | None = None,
         opencritic_stats: str | None = None,
-        raw_data_source: str | None = None
+        raw_data_source: str | None = None,
+        cycle_started_at: str | None = None
     ) -> None:
         with self._connect() as conn:
             conn.execute(
                 "INSERT INTO posted_items "
                 "(title, url, source, confidence, posted_at, origin, engagement, "
-                "reddit_url, article_url, article_title, opencritic_stats, raw_data_source) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "reddit_url, article_url, article_title, opencritic_stats, raw_data_source, cycle_started_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     title,
                     url,
@@ -101,12 +111,26 @@ class Store:
                     article_url,
                     article_title,
                     opencritic_stats,
-                    raw_data_source
+                    raw_data_source,
+                    cycle_started_at
                 ),
+            )
+    
+    def record_cycle_raw_feeds(self, cycle_started_at: str, feeds: dict[str, str]) -> None:
+        with self._connect() as conn:
+            conn.executemany(
+                "INSERT INTO cycle_raw_feeds (cycle_started_at, subreddit, raw_feed) VALUES (?, ?, ?)",
+                [(cycle_started_at, f"r/{subreddit}", raw_feed) for subreddit, raw_feed in feeds.items()],
             )
 
     def cleanup_old(self, retention_days: int) -> int:
         cutoff = (datetime.now(timezone.utc) - timedelta(days=retention_days)).isoformat()
         with self._connect() as conn:
             cursor = conn.execute("DELETE FROM posted_items WHERE posted_at < ?", (cutoff,))
+            return cursor.rowcount
+    
+    def cleanup_old_cycle_data(self, retention_days: int) -> int:
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=retention_days)).isoformat()
+        with self._connect() as conn:
+            cursor = conn.execute("DELETE FROM cycle_raw_feeds WHERE cycle_started_at < ?", (cutoff,))
             return cursor.rowcount
