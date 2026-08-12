@@ -40,7 +40,8 @@ _MIGRATION_COLUMNS = {
     "article_title": "TEXT",
     "opencritic_stats": "TEXT",
     "raw_data_source": "TEXT",
-    "cycle_started_at": "TEXT"
+    "cycle_started_at": "TEXT",
+    "channel": "TEXT",
 }
 
 
@@ -91,14 +92,15 @@ class Store:
         article_title: str | None = None,
         opencritic_stats: str | None = None,
         raw_data_source: str | None = None,
-        cycle_started_at: str | None = None
+        cycle_started_at: str | None = None,
+        channel: str | None = None,
     ) -> None:
         with self._connect() as conn:
             conn.execute(
                 "INSERT INTO posted_items "
                 "(title, url, source, confidence, posted_at, origin, engagement, "
-                "reddit_url, article_url, article_title, opencritic_stats, raw_data_source, cycle_started_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "reddit_url, article_url, article_title, opencritic_stats, raw_data_source, cycle_started_at, channel) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     title,
                     url,
@@ -112,7 +114,8 @@ class Store:
                     article_title,
                     opencritic_stats,
                     raw_data_source,
-                    cycle_started_at
+                    cycle_started_at,
+                    channel,
                 ),
             )
     

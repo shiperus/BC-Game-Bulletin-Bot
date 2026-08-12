@@ -18,6 +18,7 @@ class TrendingItem:
     opencritic_stats: str | None = None
     raw_data_source: str | None = None
     is_trailer_thread: bool = False
+    is_review_thread: bool = False
 
     def __post_init__(self) -> None:
         if not self.sources:

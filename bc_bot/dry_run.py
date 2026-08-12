@@ -27,9 +27,9 @@ def run_cycle(config: Config, store: Store) -> None:
 
     recent_posts = store.recent_posts(config.retention_days)
     fresh = aggregator.select_fresh(ranked, recent_posts)
-    review_items_to_post = [i for i in fresh if i.opencritic_stats is not None]
+    review_items_to_post = [i for i in fresh if i.is_review_thread]
     trailer_items_to_post = [i for i in fresh if i.is_trailer_thread]
-    remaining_items = [i for i in fresh if i.opencritic_stats is None and not i.is_trailer_thread]
+    remaining_items = [i for i in fresh if not i.is_review_thread and not i.is_trailer_thread]
     news_items_to_post = remaining_items[: config.posts_per_cycle]
 
     print(f"=== DRY RUN: {len(news_items_to_post)} news item(s) would be posted (of {len(ranked)} candidates), {len(review_items_to_post)} of review items and {len(trailer_items_to_post)} of trailer items ===\n")
@@ -54,7 +54,8 @@ def run_cycle(config: Config, store: Store) -> None:
             article_title=item.article_title,
             opencritic_stats=item.opencritic_stats,
             raw_data_source=item.raw_data_source,
-            cycle_started_at=cycle_started_at
+            cycle_started_at=cycle_started_at,
+            channel="news",
         )
     
     for i, item in enumerate(review_items_to_post, 1):
@@ -73,7 +74,8 @@ def run_cycle(config: Config, store: Store) -> None:
             article_title=item.article_title,
             opencritic_stats=item.opencritic_stats,
             raw_data_source=item.raw_data_source,
-            cycle_started_at=cycle_started_at
+            cycle_started_at=cycle_started_at,
+            channel="review",
         )
     
     for i, item in enumerate(trailer_items_to_post, 1):
@@ -92,7 +94,8 @@ def run_cycle(config: Config, store: Store) -> None:
             article_title=item.article_title,
             opencritic_stats=item.opencritic_stats,
             raw_data_source=item.raw_data_source,
-            cycle_started_at=cycle_started_at
+            cycle_started_at=cycle_started_at,
+            channel="trailer",
         )
 
     removed = store.cleanup_old(config.retention_days)
