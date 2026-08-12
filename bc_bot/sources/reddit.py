@@ -203,7 +203,8 @@ def fetch_trending(config: Config) -> tuple[list[TrendingItem], dict[str, str]]:
                         skip_enrichment=is_review_thread or is_trailer_thread,
                         opencritic_stats=opencritic_stats,
                         raw_data_source=str(entry.get("summary", "")),
-                        is_trailer_thread=is_trailer_thread
+                        is_trailer_thread=is_trailer_thread,
+                        is_review_thread=is_review_thread,
                     )
                 )
 
