@@ -50,12 +50,9 @@ _COVERAGE_PATTERNS = [
 def consolidate(items: list[TrendingItem]) -> list[TrendingItem]:
     """Merge items across sources that describe the same story.
 
-    Review threads and trailer threads are never merged with anything else -- even
-    when the title fuzzy-matches a plain article/link post about the same game (e.g.
-    a "<Game> - Review Thread" self-post vs. an IGN "<Game> Review" article post).
-    Those are deliberately different destinations (review channel vs. news channel)
-    and must both survive as independent items rather than have one swallow the
-    other's identity based on which had higher engagement.
+    Review threads and trailer threads never merge with anything else -- even on a
+    fuzzy title match to a plain article about the same game. They go to different
+    channels (review/news) and must both survive as independent items.
     """
     clusters: list[TrendingItem] = []
 
@@ -114,18 +111,13 @@ def select_fresh(
     items: list[TrendingItem], recent_posts: list[tuple[str, str]]
 ) -> list[TrendingItem]:
     """Filter out items that duplicate an already-posted story, by exact link or
-    fuzzy title match. Checks both prior-cycle history (recent_posts, from the DB)
-    and items already kept earlier in this same call, so near-duplicates that slip
-    past consolidate() -- e.g. differently-phrased posts of the same story from
-    different subreddits -- can't both get posted in one cycle.
+    fuzzy title match, against both prior-cycle history and items already kept in
+    this call so near-duplicates can't both get posted in one cycle.
 
-    Fuzzy title matching alone would conflate a "<Game> - Review Thread" self-post
-    with a "<Game> Review" article post about the same game -- same problem
-    consolidate() guards against, but here across cycles via posting history. Since
-    recent_posts doesn't carry the review/trailer flags, matching is restricted to
-    candidates that don't have flags at all, so a Review Thread or trailer candidate
-    is never dropped as a "duplicate" of a differently-flagged historical post (or
-    vice versa); only exact link matches still apply for those.
+    Fuzzy title matching alone conflates a \"<Game> - Review Thread\" with a
+    \"<Game> Review\" article. History has no flags, so only flagless candidates are
+    fuzzy-matched against it; a Review Thread or trailer is deduped by exact link
+    only, and never dropped as a duplicate of a differently-flagged past post.
     """
     seen_titles = [title for title, _ in recent_posts]
     seen_urls = {url for _, url in recent_posts}
