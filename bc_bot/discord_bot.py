@@ -23,7 +23,7 @@ class BcGamingBot(discord.Client):
         self.store = store
         self.cycle_task = tasks.loop(hours=config.check_interval_hours)(self._run_cycle_safe)
     
-    def store_posted_data(self, item, cycle_started_at):
+    def store_posted_data(self, item, cycle_started_at, channel):
         self.store.record_posted(
                 item.title,
                 item.link,
@@ -36,7 +36,8 @@ class BcGamingBot(discord.Client):
                 article_title=item.article_title,
                 opencritic_stats=item.opencritic_stats,
                 raw_data_source=item.raw_data_source,
-                cycle_started_at=cycle_started_at
+                cycle_started_at=cycle_started_at,
+                channel=channel,
             )
 
     async def setup_hook(self) -> None:
@@ -67,9 +68,9 @@ class BcGamingBot(discord.Client):
 
         recent_posts = self.store.recent_posts(self.config.retention_days)
         fresh = aggregator.select_fresh(ranked, recent_posts)
-        review_items_to_post = [i for i in fresh if i.opencritic_stats is not None]
+        review_items_to_post = [i for i in fresh if i.is_review_thread]
         trailer_items_to_post = [i for i in fresh if i.is_trailer_thread]
-        remaining_items = [i for i in fresh if i.opencritic_stats is None and not i.is_trailer_thread]
+        remaining_items = [i for i in fresh if not i.is_review_thread and not i.is_trailer_thread]
         news_items_to_post = remaining_items[: self.config.posts_per_cycle]
         channel_news = self.get_channel(self.config.discord_news_channel_id)
         channel_review = self.get_channel(self.config.discord_review_channel_id)
@@ -84,15 +85,15 @@ class BcGamingBot(discord.Client):
         self.store.record_cycle_raw_feeds(cycle_started_at, raw_feeds)
         for item in news_items_to_post:
             await self._post_item(channel_news, item)
-            self.store_posted_data(item, cycle_started_at)
+            self.store_posted_data(item, cycle_started_at, "news")
         
         for item in review_items_to_post:
             await self._post_item(channel_review, item)
-            self.store_posted_data(item, cycle_started_at)
+            self.store_posted_data(item, cycle_started_at, "review")
         
         for item in trailer_items_to_post:
             await self._post_item(channel_trailer, item)
-            self.store_posted_data(item, cycle_started_at)
+            self.store_posted_data(item, cycle_started_at, "trailer")
 
         removed = self.store.cleanup_old(self.config.retention_days)
         logger.info(
