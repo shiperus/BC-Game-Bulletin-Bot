@@ -14,26 +14,6 @@ CONSOLIDATION_THRESHOLD = 80
 # single cycle.
 DUPLICATE_THRESHOLD = 80
 
-# YouTube hosts/formats that can all point at the same video. Trailer posts are
-# deduped by exact link only (flagged items skip fuzzy-title matching), so a single
-# video surfacing as youtube.com/watch?v= in one cycle and youtu.be/... with different
-# tracking params in the next was escaping dedup and getting double-posted. Reducing
-# every YouTube URL to its canonical video ID closes that hole.
-_YT_ID_PATTERNS = [
-    re.compile(r"(?:youtu\.be/|youtube\.com/(?:watch\?[^#]*?v=|shorts/|embed/|live/|v/))([A-Za-z0-9_-]{11})")
-]
-
-
-def canonical_url(url: str) -> str:
-    """Return a URL to dedup on. YouTube links are reduced to `yt:<video-id>` so
-    youtu.be vs youtube.com/watch?v= spelling and tracking params can't defeat
-    exact-link dedup; every other URL is returned unchanged."""
-    for pattern in _YT_ID_PATTERNS:
-        match = pattern.search(url)
-        if match:
-            return f"yt:{match.group(1)}"
-    return url
-
 # Phrases that show up in titles announcing, revealing, or confirming a new game --
 # as opposed to discounts, patch notes, esports results, memes, etc.
 _ANNOUNCEMENT_PATTERNS = [
@@ -140,13 +120,12 @@ def select_fresh(
     only, and never dropped as a duplicate of a differently-flagged past post.
     """
     seen_titles = [title for title, _ in recent_posts]
-    seen_urls = {canonical_url(url) for _, url in recent_posts}
+    seen_urls = {url for _, url in recent_posts}
 
     fresh: list[TrendingItem] = []
     kept_titles_by_flags: dict[tuple[bool, bool], list[str]] = {}
     for item in items:
-        item_link = canonical_url(item.link)
-        if item_link in seen_urls:
+        if item.link in seen_urls:
             continue
 
         flag_key = (item.is_review_thread, item.is_trailer_thread)
@@ -164,6 +143,6 @@ def select_fresh(
 
         fresh.append(item)
         kept_titles_by_flags.setdefault(flag_key, []).append(item.title)
-        seen_urls.add(item_link)
+        seen_urls.add(item.link)
 
     return fresh
