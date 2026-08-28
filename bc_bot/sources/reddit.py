@@ -77,7 +77,16 @@ _OPENCRITIC_LINK_PATTERN = re.compile(
 
 # Filter for Trailer thread and youtube links inside the thread
 _YOUTUBE_HOST_PATTERN = re.compile(r"^https?://(www\.|m\.)?(youtube\.com|youtu\.be)/", re.IGNORECASE)
-_TRAILER_TITLE_PATTERN = re.compile(r"\btrailer\b", re.IGNORECASE)
+
+# Titles that designate a game-trailer-class video (announce/reveal/teaser/gameplay/
+# showcase/preview/trailer). Combined with a YouTube link these belong in the "game
+# trailers" channel, not news. Note the plain "<Game> Release Date" phrasing is NOT a
+# trailer signal on its own -- only the title keywords below trigger trailer routing,
+# and only when the submitted URL is actually a YouTube video.
+_TRAILER_TITLE_PATTERN = re.compile(
+    r"\b(?:announc\w*|reveal\w*|teaser\w*|gameplay|showcase|preview\w*|trailer\w*)\b",
+    re.IGNORECASE,
+)
 
 # Each subreddit's review-thread template words the OpenCritic link text a bit
 # differently -- e.g. r/Games: "OpenCritic - 88 average - 95% recommended - 58

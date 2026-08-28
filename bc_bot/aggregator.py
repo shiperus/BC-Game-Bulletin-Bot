@@ -14,6 +14,18 @@ CONSOLIDATION_THRESHOLD = 80
 # single cycle.
 DUPLICATE_THRESHOLD = 80
 
+# Collapses dots inside acronym-style tokens so differently-spelled titles for the
+# same entry still match, e.g. "S.T.A.L.K.E.R. 2 ... Launch Trailer" vs
+# "STALKER 2 ... Launch Trailer" score ~89 (≳ threshold) instead of ~74 (below it).
+# Applied only to the fuzzy-match inputs, never to the stored/posted title itself.
+_TITLE_NORM_PATTERN = re.compile(r"(?<=\b[A-Za-z])\.(?=[A-Za-z])")
+
+
+def _match_title_tokens(title_a: str, title_b: str) -> float:
+    a = _TITLE_NORM_PATTERN.sub("", title_a)
+    b = _TITLE_NORM_PATTERN.sub("", title_b)
+    return fuzz.token_sort_ratio(a, b, processor=utils.default_process)
+
 # YouTube hosts/formats that can all point at the same video. Trailer posts are
 # deduped by exact link only (flagged items skip fuzzy-title matching), so a single
 # video surfacing as youtube.com/watch?v= in one cycle and youtu.be/... with different
@@ -83,9 +95,7 @@ def consolidate(items: list[TrendingItem]) -> list[TrendingItem]:
                 for c in clusters
                 if c.is_review_thread == item.is_review_thread
                 and c.is_trailer_thread == item.is_trailer_thread
-                and fuzz.token_sort_ratio(
-                    item.title, c.title, processor=utils.default_process
-                )
+                and _match_title_tokens(item.title, c.title)
                 >= CONSOLIDATION_THRESHOLD
             ),
             None,
@@ -156,8 +166,7 @@ def select_fresh(
         title_pool += kept_titles_by_flags.get(flag_key, [])
 
         if any(
-            fuzz.token_sort_ratio(item.title, title, processor=utils.default_process)
-            >= DUPLICATE_THRESHOLD
+            _match_title_tokens(item.title, title) >= DUPLICATE_THRESHOLD
             for title in title_pool
         ):
             continue
