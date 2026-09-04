@@ -53,6 +53,14 @@ _DAY_OF_WEEK_PATTERN = re.compile(
     re.IGNORECASE,
 )
 
+# Event/recurring megathread hubs ("[MEGATHREAD] Gamescom 2026") are Reddit
+# community-discussion aggregation, not reportable news. The general
+# _is_meta_thread() date heuristic below can't catch them (their stamps -- "2026",
+# "09.03.26" -- carry no day/month token), so catch the explicit megathread marker
+# directly. A "Review (Mega)Thread" is excluded: that is a routed aggregator
+# self-post (review channel), not a discussion hub.
+_MEGATHREAD_PATTERN = re.compile(r"\b(?:mega\s*thread|megathread)\b", re.IGNORECASE)
+
 
 # Direct image/video hosts and file extensions Reddit posts commonly link to (memes,
 # screenshots, clips) rather than a news article. These carry no headline of their own
@@ -135,6 +143,11 @@ def _is_meta_thread(title: str, is_self_post: bool) -> bool:
     if any(pattern.search(title) for pattern in _META_THREAD_PATTERNS):
         return True
 
+    # Explicit megathread marker (e.g. "[MEGATHREAD] Gamescom 2026") that the date
+    # heuristic below can't see; never mis-fire on a "Review (Mega)Thread".
+    if _MEGATHREAD_PATTERN.search(title) and not _REVIEW_THREAD_PATTERN.search(title):
+        return True
+
     if not is_self_post:
         return False
 
@@ -145,6 +158,47 @@ def _is_meta_thread(title: str, is_self_post: bool) -> bool:
         return True
 
     return bool(_DAY_OF_WEEK_PATTERN.search(title))
+
+
+# Self-post community-discussion threads (opinion questions, first-person anecdotes/
+# gripes, crowd-sourced list posts) rank high in r/gaming "hot" every day but are
+# NOT reportable news -- they PROMPT the community instead of REPORTING a fact. The
+# news channel should carry game news (article link posts, video posts, and even
+# leak/rumour self-posts that report a specific development), not community chatter.
+# These patterns catch the unmistakable survey/anecdote phrasings; combined with the
+# self-post + not-review/trailer guards in fetch_trending(), they never touch news
+# articles, video posts, review threads, or trailer posts.
+_LEAD_QUESTION_PATTERN = re.compile(
+    r"^(?:what'?s?|which|why|any|has\b|how'?s?|did|does|where|when|who|are|is|do)\b",
+    re.IGNORECASE,
+)
+_LEAD_OPINION_PATTERN = re.compile(r"^(?:i\s|i(?:'|\u2019)\w*\s|im\s)", re.IGNORECASE)
+_LEAD_LIST_PATTERN = re.compile(r"^a list of\b", re.IGNORECASE)
+_ASK_PHRASE_PATTERN = re.compile(
+    r"(your impressions|do you think|what do you|what did you|have you\b"
+    r"|what\b.*\b(?:you|your)\b|why\b.*\b(?:you|your)\b)",
+    re.IGNORECASE,
+)
+_REALIZATION_PATTERN = re.compile(
+    r"\bi (?:just )?(?:realized|noticed|remember(?:ed)?|never knew)\b", re.IGNORECASE
+)
+# Strip surrounding quotes/punctuation so a lead question/opinion is recognised even
+# when the OP wraps it in quotes (e.g. "\"Headshot!\" (UT) ... What sound snippets...").
+_COMMUNITY_STRIP_PATTERN = re.compile(r"[“”\"\'\.!:?,\u2018\u2019]")
+
+
+def _is_community_discussion(title: str) -> bool:
+    """True for titles phrased as a community survey/anecdote rather than a report:
+    leading question words, leading first-person opinions/gripes, a crowd-sourced
+    list, an ask directed at "you/your", or an "I just realized"-style recollection."""
+    t = _COMMUNITY_STRIP_PATTERN.sub("", title)
+    return (
+        _LEAD_QUESTION_PATTERN.search(t) is not None
+        or _LEAD_OPINION_PATTERN.search(t) is not None
+        or _LEAD_LIST_PATTERN.search(t) is not None
+        or _ASK_PHRASE_PATTERN.search(t) is not None
+        or _REALIZATION_PATTERN.search(t) is not None
+    )
 
 
 def fetch_trending(config: Config) -> tuple[list[TrendingItem], dict[str, str]]:
@@ -174,6 +228,7 @@ def fetch_trending(config: Config) -> tuple[list[TrendingItem], dict[str, str]]:
 
             skipped_meta_threads = 0
             skipped_image_links = 0
+            skipped_community_discussion = 0
             weight = config.subreddit_weights.get(subreddit_name, 1.0)
             total_feed_entries = len(feed.entries)
             for rank, entry in enumerate(feed.entries):
@@ -194,6 +249,17 @@ def fetch_trending(config: Config) -> tuple[list[TrendingItem], dict[str, str]]:
 
                 is_review_thread = bool(_REVIEW_THREAD_PATTERN.search(title))
                 is_trailer_thread = bool(submitted_url and _TRAILER_TITLE_PATTERN.search(title) and _YOUTUBE_HOST_PATTERN.search(submitted_url))
+                # A self-post community discussion (question/anecdote/list) is not
+                # reportable news. Only applies to unflagged self-posts, so leak/rumour
+                # news, review threads, and trailer posts are never suppressed.
+                if (
+                    is_self_post
+                    and not is_review_thread
+                    and not is_trailer_thread
+                    and _is_community_discussion(title)
+                ):
+                    skipped_community_discussion += 1
+                    continue
                 opencritic_stats = None
                 if is_review_thread:
                     opencritic = _extract_opencritic(entry.get("summary", ""))
@@ -228,6 +294,12 @@ def fetch_trending(config: Config) -> tuple[list[TrendingItem], dict[str, str]]:
                     "r/%s: skipped %d image/video link post(s)",
                     subreddit_name,
                     skipped_image_links,
+                )
+            if skipped_community_discussion:
+                logger.info(
+                    "r/%s: skipped %d self-post community-discussion thread(s)",
+                    subreddit_name,
+                    skipped_community_discussion,
                 )
         except Exception:
             logger.exception("Failed to fetch trending posts from r/%s", subreddit_name)
