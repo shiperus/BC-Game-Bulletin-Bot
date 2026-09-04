@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from collections import defaultdict
 
 from rapidfuzz import fuzz, utils
 
@@ -138,19 +139,28 @@ def rank(items: list[TrendingItem]) -> list[TrendingItem]:
 
 
 def select_fresh(
-    items: list[TrendingItem], recent_posts: list[tuple[str, str]]
+    items: list[TrendingItem], recent_posts: list[tuple[str, str, str | None]]
 ) -> list[TrendingItem]:
     """Filter out items that duplicate an already-posted story, by exact link or
     fuzzy title match, against both prior-cycle history and items already kept in
     this call so near-duplicates can't both get posted in one cycle.
 
-    Fuzzy title matching alone conflates a \"<Game> - Review Thread\" with a
-    \"<Game> Review\" article. History has no flags, so only flagless candidates are
-    fuzzy-matched against it; a Review Thread or trailer is deduped by exact link
-    only, and never dropped as a duplicate of a differently-flagged past post.
+    Fuzzy history matching is scoped per channel via the stored channel tag:
+    plain news items match against news history, trailer items against trailer
+    history, review threads against review history. This lets a re-uploaded trailer
+    with a *different* YouTube video ID still be caught (same title in the same
+    channel) while never conflating a "<Game> Review Thread" (review channel) with
+    a "<Game> Review" news article. Pre-migration rows with no channel (NULL) are
+    treated as news history, preserving prior behavior for undifferentiated rows.
     """
-    seen_titles = [title for title, _ in recent_posts]
-    seen_urls = {canonical_url(url) for _, url in recent_posts}
+    seen_urls = {canonical_url(url) for _, url, _ in recent_posts}
+
+    # History title pools per channel. Pre-migration rows (channel is NULL) predate
+    # channel routing and are folded into the news pool.
+    history_titles: dict[str, list[str]] = defaultdict(list)
+    for title, _, channel in recent_posts:
+        key = channel if channel in ("news", "review", "trailer") else "news"
+        history_titles[key].append(title)
 
     fresh: list[TrendingItem] = []
     kept_titles_by_flags: dict[tuple[bool, bool], list[str]] = {}
@@ -160,9 +170,14 @@ def select_fresh(
             continue
 
         flag_key = (item.is_review_thread, item.is_trailer_thread)
-        # Cross-cycle history has no flags recorded, so only compare unflagged
-        # candidates against it -- a flagged item can only be deduped by exact link.
-        title_pool = list(seen_titles) if flag_key == (False, False) else []
+        # Match history only within the item's own channel so flagged items
+        # (trailers, review threads) dedup against their own history.
+        if flag_key == (False, False):
+            pool_key = "news"
+        else:
+            pool_key = "trailer" if item.is_trailer_thread else "review"
+
+        title_pool = list(history_titles[pool_key])
         title_pool += kept_titles_by_flags.get(flag_key, [])
 
         if any(

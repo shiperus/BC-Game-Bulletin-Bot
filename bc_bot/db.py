@@ -67,16 +67,18 @@ class Store:
         finally:
             conn.close()
 
-    def recent_posts(self, retention_days: int) -> list[tuple[str, str]]:
-        """Return (title, url) pairs posted within the retention window, for the
-        caller to dedup fresh candidates against -- fetched once per cycle rather
-        than re-querying per candidate."""
+    def recent_posts(self, retention_days: int) -> list[tuple[str, str, str | None]]:
+        """Return (title, url, channel) pairs posted within the retention window,
+        for the caller to dedup fresh candidates against -- fetched once per cycle
+        rather than re-querying per candidate. channel lets flagged items (trailers,
+        review threads) dedup against history within their own channel instead of
+        being conflated with plain news titles."""
         cutoff = (datetime.now(timezone.utc) - timedelta(days=retention_days)).isoformat()
         with self._connect() as conn:
             rows = conn.execute(
-                "SELECT title, url FROM posted_items WHERE posted_at >= ?", (cutoff,)
+                "SELECT title, url, channel FROM posted_items WHERE posted_at >= ?", (cutoff,)
             ).fetchall()
-        return [(row[0], row[1]) for row in rows]
+        return [(row[0], row[1], row[2]) for row in rows]
 
     def record_posted(
         self,
