@@ -182,15 +182,51 @@ _ASK_PHRASE_PATTERN = re.compile(
 _REALIZATION_PATTERN = re.compile(
     r"\bi (?:just )?(?:realized|noticed|remember(?:ed)?|never knew)\b", re.IGNORECASE
 )
+# First-person experiential/preference phrasing that appears mid-title rather than
+# as the leading "I ..." caught by _LEAD_OPINION_PATTERN -- e.g. "Superhot is the
+# most innovative shooter I've played in years." / "A game doesn't need 100 hours
+# ... I'd take 10 unforgettable hours over 100 forgettable ones." Both are first-
+# person anecdotes/gripes, not reportable news. Matched against the apostrophe-
+# stripped title (see _COMMUNITY_STRIP_PATTERN), so "I've"/"I'd" appear as "ive"/"id".
+_FIRST_PERSON_MID_PATTERN = re.compile(
+    r"\bive (?:ever )?(?:played|seen|tried|finished|beaten|experienced|encountered)\b"
+    r"|\bid (?:take|rather|have|prefer|go)\b",
+    re.IGNORECASE,
+)
+# Normative/contrarian opinion and hot-take phrasing on a self-post: a counterfactual
+# "would be worse/better", "are game changers", or "worth the money" -- opinions, not
+# reports ("Papers, Please would be worse with a less annoying UI").
+_OPINION_PHRASE_PATTERN = re.compile(
+    r"\bwould be (?:worse|better|nice|great|cool|bad|good)\b"
+    r"|\bare game changers?\b"
+    r"|\bworth the money\b",
+    re.IGNORECASE,
+)
+# A self-post soliciting the community rather than reporting: "Gaming recommendations
+# for quiet a desk job?", "can we normalize menu wrapping?", "should we ...".
+_REQUEST_PATTERN = re.compile(
+    r"\brecommend\w*\b"
+    r"|\bcan we (?:please )?(?:normalize|stop|bring|get|make|fix|talk|just)\b"
+    r"|\bshould we\b",
+    re.IGNORECASE,
+)
+# Community-poll phrasings addressed straight at the reader ("Games you did a complete
+# 180 on."). Real news self-posts (leaks/rumours) never address "you did"/"you ever".
+_DIRECTED_AT_READER_PATTERN = re.compile(
+    r"\byou (?:did|ever|100\w*)\b",
+    re.IGNORECASE,
+)
 # Strip surrounding quotes/punctuation so a lead question/opinion is recognised even
 # when the OP wraps it in quotes (e.g. "\"Headshot!\" (UT) ... What sound snippets...").
-_COMMUNITY_STRIP_PATTERN = re.compile(r"[“”\"\'\.!:?,\u2018\u2019]")
+_COMMUNITY_STRIP_PATTERN = re.compile(r"[“”\"\'.!:?,\u2018\u2019]")
 
 
 def _is_community_discussion(title: str) -> bool:
     """True for titles phrased as a community survey/anecdote rather than a report:
     leading question words, leading first-person opinions/gripes, a crowd-sourced
-    list, an ask directed at "you/your", or an "I just realized"-style recollection."""
+    list, an ask directed at "you/your", an "I just realized"-style recollection,
+    or first-person/contrarian opinion, recommendation, and reader-addressed
+    phrasings that sit mid-title (see patterns above)."""
     t = _COMMUNITY_STRIP_PATTERN.sub("", title)
     return (
         _LEAD_QUESTION_PATTERN.search(t) is not None
@@ -198,6 +234,10 @@ def _is_community_discussion(title: str) -> bool:
         or _LEAD_LIST_PATTERN.search(t) is not None
         or _ASK_PHRASE_PATTERN.search(t) is not None
         or _REALIZATION_PATTERN.search(t) is not None
+        or _FIRST_PERSON_MID_PATTERN.search(t) is not None
+        or _OPINION_PHRASE_PATTERN.search(t) is not None
+        or _REQUEST_PATTERN.search(t) is not None
+        or _DIRECTED_AT_READER_PATTERN.search(t) is not None
     )
 
 
