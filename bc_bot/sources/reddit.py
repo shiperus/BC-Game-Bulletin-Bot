@@ -182,15 +182,77 @@ _ASK_PHRASE_PATTERN = re.compile(
 _REALIZATION_PATTERN = re.compile(
     r"\bi (?:just )?(?:realized|noticed|remember(?:ed)?|never knew)\b", re.IGNORECASE
 )
+# First-person experiential/preference phrasing that appears mid-title rather than
+# as the leading "I ..." caught by _LEAD_OPINION_PATTERN -- e.g. "Superhot is the
+# most innovative shooter I've played in years." / "A game doesn't need 100 hours
+# ... I'd take 10 unforgettable hours over 100 forgettable ones." Both are first-
+# person anecdotes/gripes, not reportable news. Matched against the apostrophe-
+# stripped title (see _COMMUNITY_STRIP_PATTERN), so "I've"/"I'd" appear as "ive"/"id".
+_FIRST_PERSON_MID_PATTERN = re.compile(
+    r"\bive (?:ever )?(?:played|seen|tried|finished|beaten|experienced|encountered)\b"
+    r"|\bid (?:take|rather|have|prefer|go)\b",
+    re.IGNORECASE,
+)
+# Normative/contrarian opinion and hot-take phrasing on a self-post: a counterfactual
+# "would be worse/better", "are game changers", or "worth the money" -- opinions, not
+# reports ("Papers, Please would be worse with a less annoying UI").
+_OPINION_PHRASE_PATTERN = re.compile(
+    r"\bwould be (?:worse|better|nice|great|cool|bad|good)\b"
+    r"|\bare game changers?\b"
+    r"|\bworth the money\b",
+    re.IGNORECASE,
+)
+# A self-post soliciting the community rather than reporting: "Gaming recommendations
+# for quiet a desk job?", "can we normalize menu wrapping?", "should we ...".
+_REQUEST_PATTERN = re.compile(
+    r"\brecommend\w*\b"
+    r"|\bcan we (?:please )?(?:normalize|stop|bring|get|make|fix|talk|just)\b"
+    r"|\bshould we\b",
+    re.IGNORECASE,
+)
+# Community-poll phrasings addressed straight at the reader ("Games you did a complete
+# 180 on."). Real news self-posts (leaks/rumours) never address "you did"/"you ever".
+_DIRECTED_AT_READER_PATTERN = re.compile(
+    r"\byou (?:did|ever|100\w*)\b",
+    re.IGNORECASE,
+)
+# A self-post that opens with an explicit "(unpopular opinion)"/"rant" disclaimer is a
+# first-person opinion post regardless of what follows ("Rant: Don't announce a game
+# unless you have gameplay to show for it"). News reports never self-disclaim as a rant.
+_RANT_PREFIX_PATTERN = re.compile(r"^\s*(?:rant|unpopular opinion)(?:\s*[:?\u2014\u2013]|\b)", re.IGNORECASE)
+# A comparison/share prompt aimed at players who have played something ("For those that
+# have played Valheim and Dragonwilds…") solicits the community, it doesn't report news.
+_MID_COMMUNITY_SEEK_PATTERN = re.compile(
+    r"\bfor (?:those|anyone|everyone|people|someone) (?:that|who) (?:have|has) played\b",
+    re.IGNORECASE,
+)
+# A leading "In which …" survey/poll question ("In which games you've played, were there
+# many references to other games…?") rather than a report; survey phrasings never lead
+# a real news leak/rumour self-post.
+_LEAD_IN_WHICH_PATTERN = re.compile(r"^\s*in which\b", re.IGNORECASE)
+# A superlative "…the best/greatest X?" question asking the community for its pick
+# ("Games with the best stealth gameplay?"). Guarded to self-posts at the call site, so a
+# news-article headline containing "the best" can't be suppressed.
+_SUPERLATIVE_QUESTION_PATTERN = re.compile(r"\bthe (?:best|greatest)\b.*\?", re.IGNORECASE)
+# Subreddit/meta housekeeping self-posts ("Don't forget to join the official … Discord!")
+# are community promotion, not gaming news.
+_META_PROMO_PATTERN = re.compile(
+    r"^\s*don'?t forget to (?:join|check|follow|subscribe)\b", re.IGNORECASE
+)
 # Strip surrounding quotes/punctuation so a lead question/opinion is recognised even
 # when the OP wraps it in quotes (e.g. "\"Headshot!\" (UT) ... What sound snippets...").
-_COMMUNITY_STRIP_PATTERN = re.compile(r"[“”\"\'\.!:?,\u2018\u2019]")
+_COMMUNITY_STRIP_PATTERN = re.compile(r"[“”\"\'.!:?,\u2018\u2019]")
 
 
 def _is_community_discussion(title: str) -> bool:
     """True for titles phrased as a community survey/anecdote rather than a report:
     leading question words, leading first-person opinions/gripes, a crowd-sourced
-    list, an ask directed at "you/your", or an "I just realized"-style recollection."""
+    list, an ask directed at "you/your", an "I just realized"-style recollection,
+    first-person/contrarian opinion, recommendation, and reader-addressed
+    phrasings that sit mid-title, an explicit rant/"unpopular opinion" opener, a
+    "for those who have played X" comparison prompt, an "in which …" survey
+    question, a "…the best X?" pick question, or a subreddit-promo housekeeping
+    post (see patterns above)."""
     t = _COMMUNITY_STRIP_PATTERN.sub("", title)
     return (
         _LEAD_QUESTION_PATTERN.search(t) is not None
@@ -198,6 +260,16 @@ def _is_community_discussion(title: str) -> bool:
         or _LEAD_LIST_PATTERN.search(t) is not None
         or _ASK_PHRASE_PATTERN.search(t) is not None
         or _REALIZATION_PATTERN.search(t) is not None
+        or _FIRST_PERSON_MID_PATTERN.search(t) is not None
+        or _OPINION_PHRASE_PATTERN.search(t) is not None
+        or _REQUEST_PATTERN.search(t) is not None
+        or _DIRECTED_AT_READER_PATTERN.search(t) is not None
+        or _RANT_PREFIX_PATTERN.search(t) is not None
+        or _MID_COMMUNITY_SEEK_PATTERN.search(t) is not None
+        or _LEAD_IN_WHICH_PATTERN.search(t) is not None
+        or _SUPERLATIVE_QUESTION_PATTERN.search(t) is not None
+        or _SUPERLATIVE_QUESTION_PATTERN.search(title) is not None
+        or _META_PROMO_PATTERN.search(t) is not None
     )
 
 
