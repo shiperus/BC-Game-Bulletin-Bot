@@ -27,6 +27,23 @@ def _match_title_tokens(title_a: str, title_b: str) -> float:
     b = _TITLE_NORM_PATTERN.sub("", title_b)
     return fuzz.token_sort_ratio(a, b, processor=utils.default_process)
 
+
+def _cross_outlet_match(title_a: str, title_b: str) -> float:
+    """Raw-title similarity for same-story pairs reported by different outlets.
+
+    Cross-outlet pairs describing the same story are frequently worded so
+    differently that token_sort_ratio (used by _match_title_tokens / the strict
+    dedup path) sits just under the threshold -- e.g. "Alan Ritchson In Talks To
+    Star As The Lead In 'Helldivers' Live-Action Movie, Replacing Jason Momoa"
+    vs "THR: Alan Ritchson in Talks to Star in Sony's Helldivers Movie" (~68 on
+    token_sort, ~91 on token_set). sources/rss.py already relies on token_set_ratio
+    for exactly this cross-outlet case; apply it here as a second, broader signal so
+    an already-posted story told by a different outlet is still caught as a duplicate.
+    """
+    a = _TITLE_NORM_PATTERN.sub("", title_a)
+    b = _TITLE_NORM_PATTERN.sub("", title_b)
+    return fuzz.token_set_ratio(a, b, processor=utils.default_process)
+
 # YouTube hosts/formats that can all point at the same video. Trailer posts are
 # deduped by exact link only (flagged items skip fuzzy-title matching), so a single
 # video surfacing as youtube.com/watch?v= in one cycle and youtu.be/... with different
@@ -180,8 +197,13 @@ def select_fresh(
         title_pool = list(history_titles[pool_key])
         title_pool += kept_titles_by_flags.get(flag_key, [])
 
+        # A title is a duplicate of an already-posted story if it matches by either
+        # the strict token_sort signal (near-identical phrasing) or the broader
+        # cross-outlet token_set signal (same story told by a different outlet, whose
+        # headline wording diverges enough that token_sort alone sits under the bar).
         if any(
             _match_title_tokens(item.title, title) >= DUPLICATE_THRESHOLD
+            or _cross_outlet_match(item.title, title) >= DUPLICATE_THRESHOLD
             for title in title_pool
         ):
             continue
