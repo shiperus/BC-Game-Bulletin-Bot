@@ -239,6 +239,47 @@ _SUPERLATIVE_QUESTION_PATTERN = re.compile(r"\bthe (?:best|greatest)\b.*\?", re.
 _META_PROMO_PATTERN = re.compile(
     r"^\s*don'?t forget to (?:join|check|follow|subscribe)\b", re.IGNORECASE
 )
+# A self-post that opens with a leading conditional first-person gripe ("If I never
+# encounter another pack of wild wolves in an RPG it'll still be too soon") is an
+# anecdote/complaint, not a report. News self-posts (leaks/rumours) never open "If I".
+_LEAD_IF_PATTERN = re.compile(r"^\s*if i\b", re.IGNORECASE)
+# A bare leading superlative/favourite pick ("Most cinematic game ?", "Favorite Twin
+# stick shooter") is a community poll/shout-out, not a news report. Guarded to
+# self-posts, so a news headline that happens to start "Most anticipated …" (a link
+# post or an article) is untouched.
+_LEAD_SUPERLATIVE_PATTERN = re.compile(
+    r"^\s*(?:the )?(?:most|best|greatest|favorite|favourite)\b", re.IGNORECASE
+)
+# A self-post asking for game recommendations ("Looking for games: Liminal or
+# similarly minimalist walking sims…", "Looking for a game: leveling up minions…")
+# solicits the community rather than reporting news.
+_LOOKING_FOR_GAME_PATTERN = re.compile(
+    r"\blooking for (?:a |an |some |new |good )?(?:game|games)\b", re.IGNORECASE
+)
+# First-person experiential wording on a self-post: "<Game> made me appreciate …",
+# "<Studio> has shown me that …" -- an anecdote, not a report.
+_MADE_ME_PATTERN = re.compile(
+    r"\bmade me (?:appreciate|realize|notice|think|feel|enjoy|want|hate|love)\b",
+    re.IGNORECASE,
+)
+_SHOWN_ME_PATTERN = re.compile(r"\bshown me (?:that|how)\b", re.IGNORECASE)
+# A bare evaluative verdict on a self-post ("Blood of Dawnwalker is very good",
+# "Onimusha is incredible") is an opinion post. End-anchored so a phrase like
+# "…is good news" in the middle of a report isn't suppressed; self-post guard means
+# article headlines are never at risk.
+_BARE_VERDICT_PATTERN = re.compile(
+    r"\bis (?:very |so |really |incredibly )?(?:good|great|incredible|amazing|"
+    r"fantastic|excellent|wonderful|terrible|awful|boring|overrated|underrated)\b\s*$",
+    re.IGNORECASE,
+)
+# A subjective observation/anecdote restated as a general truth ("Sometimes is nice
+# when an NPC acknowledges your weird behavior that you take for granted") -- a
+# first-person opinion, not a report. The "take for granted" / "is nice when" combo
+# phrasings are community-opinion markers never found in news-article headlines.
+_OBSERVATION_PATTERN = re.compile(
+    r"\btake(?:n)? for granted\b|(?:\bis|\bit'?s) (?:nice|great|cool|weird|odd|satisfying) when\b",
+    re.IGNORECASE,
+)
 # Strip surrounding quotes/punctuation so a lead question/opinion is recognised even
 # when the OP wraps it in quotes (e.g. "\"Headshot!\" (UT) ... What sound snippets...").
 _COMMUNITY_STRIP_PATTERN = re.compile(r"[“”\"\'.!:?,\u2018\u2019]")
@@ -251,8 +292,11 @@ def _is_community_discussion(title: str) -> bool:
     first-person/contrarian opinion, recommendation, and reader-addressed
     phrasings that sit mid-title, an explicit rant/"unpopular opinion" opener, a
     "for those who have played X" comparison prompt, an "in which …" survey
-    question, a "…the best X?" pick question, or a subreddit-promo housekeeping
-    post (see patterns above)."""
+    question, a "…the best X?" pick question, a subreddit-promo housekeeping
+    post, a leading conditional "If I …" gripe, a bare superlative/"favorite …"
+    pick, a "Looking for games: …" recommendation request, a "<Game> made me …" /
+    "…has shown me that …" anecdote, or a bare "X is very good/incredible"
+    verdict (see patterns above)."""
     t = _COMMUNITY_STRIP_PATTERN.sub("", title)
     return (
         _LEAD_QUESTION_PATTERN.search(t) is not None
@@ -270,6 +314,13 @@ def _is_community_discussion(title: str) -> bool:
         or _SUPERLATIVE_QUESTION_PATTERN.search(t) is not None
         or _SUPERLATIVE_QUESTION_PATTERN.search(title) is not None
         or _META_PROMO_PATTERN.search(t) is not None
+        or _LEAD_IF_PATTERN.search(t) is not None
+        or _LEAD_SUPERLATIVE_PATTERN.search(t) is not None
+        or _LOOKING_FOR_GAME_PATTERN.search(t) is not None
+        or _MADE_ME_PATTERN.search(t) is not None
+        or _SHOWN_ME_PATTERN.search(t) is not None
+        or _BARE_VERDICT_PATTERN.search(t) is not None
+        or _OBSERVATION_PATTERN.search(t) is not None
     )
 
 
