@@ -21,10 +21,33 @@ DUPLICATE_THRESHOLD = 80
 # Applied only to the fuzzy-match inputs, never to the stored/posted title itself.
 _TITLE_NORM_PATTERN = re.compile(r"(?<=\b[A-Za-z])\.(?=[A-Za-z])")
 
+# Some same-story pairs differ only by which outlet/author filed them -- e.g.
+# "Bloomberg: The $40 Million Journey Behind 'The Blood of Dawnwalker'" vs
+# "Jason Schreier: The Blood of Dawnwalker cost $40 million to produce". A leading
+# outlet/author byline adds no story signal and just depresses the fuzzy score of an
+# otherwise-identical story, letting the second outlet's restatement slip past dedup.
+# Only colon-suffixed bylines are stripped, and only at the very start of the title,
+# so a title that merely begins with a brand ("PlayStation Blog ...") is untouched
+# and genuinely unrelated stories are never merged. Verified against the posted
+# corpus: this normalization lifts a real cross-outlet duplicate over the threshold
+# while crossing threshold for no distinct-story pair.
+_OUTLET_PREFIX_PATTERN = re.compile(
+    r"^\s*(?:bloomberg|jason schreier|schreier|thr|the verge|eurogamer|games radar|"
+    r"insider gaming|insider-gaming|tom henderson|tom warren|kotaku|ign|game spot|"
+    r"gamespot|rock paper shotgun)\s*:\s*",
+    re.IGNORECASE,
+)
+
+
+def _norm_title(title: str) -> str:
+    """Normalize a title for fuzzy comparison: drop outlet byline prefixes and
+    collapse acronym dots. Never applied to the stored/posted title."""
+    return _OUTLET_PREFIX_PATTERN.sub("", _TITLE_NORM_PATTERN.sub("", title))
+
 
 def _match_title_tokens(title_a: str, title_b: str) -> float:
-    a = _TITLE_NORM_PATTERN.sub("", title_a)
-    b = _TITLE_NORM_PATTERN.sub("", title_b)
+    a = _norm_title(title_a)
+    b = _norm_title(title_b)
     return fuzz.token_sort_ratio(a, b, processor=utils.default_process)
 
 
@@ -40,8 +63,8 @@ def _cross_outlet_match(title_a: str, title_b: str) -> float:
     for exactly this cross-outlet case; apply it here as a second, broader signal so
     an already-posted story told by a different outlet is still caught as a duplicate.
     """
-    a = _TITLE_NORM_PATTERN.sub("", title_a)
-    b = _TITLE_NORM_PATTERN.sub("", title_b)
+    a = _norm_title(title_a)
+    b = _norm_title(title_b)
     return fuzz.token_set_ratio(a, b, processor=utils.default_process)
 
 # YouTube hosts/formats that can all point at the same video. Trailer posts are
