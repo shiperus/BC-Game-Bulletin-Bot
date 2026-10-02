@@ -211,9 +211,10 @@ _REQUEST_PATTERN = re.compile(
     re.IGNORECASE,
 )
 # Community-poll phrasings addressed straight at the reader ("Games you did a complete
-# 180 on."). Real news self-posts (leaks/rumours) never address "you did"/"you ever".
+# 180 on." / "Games You Miss That Were Shut Down"). Real news self-posts (leaks/
+# rumours) never address "you did"/"you ever"/"you miss".
 _DIRECTED_AT_READER_PATTERN = re.compile(
-    r"\byou (?:did|ever|100\w*)\b",
+    r"\byou (?:did|ever|100\w*|miss|remember|regret)\b",
     re.IGNORECASE,
 )
 # A self-post that opens with an explicit "(unpopular opinion)"/"rant" disclaimer is a
@@ -280,6 +281,36 @@ _OBSERVATION_PATTERN = re.compile(
     r"\btake(?:n)? for granted\b|(?:\bis|\bit'?s) (?:nice|great|cool|weird|odd|satisfying) when\b",
     re.IGNORECASE,
 )
+# A self-post recounting a personal completion/playthrough ("Just 100% completed
+# both Shadow of Mordor and Shadow of War back-to-back") is an anecdote, not a
+# report. The completion verb guard keeps "Just Dance…" / "just announced…" news
+# titles (link posts) from matching.
+_JUST_PLAYED_PATTERN = re.compile(
+    r"^\s*just\b[^.!?\n]{0,45}\b(?:completed|finished|beat|replayed|platinum|100%)\b",
+    re.IGNORECASE,
+)
+# A community poll/posed prompt ("Name one thing in any game that everyone agrees
+# is either perfect or absolutely sucks") solicits a single answer, not a report.
+_NAME_ONE_PATTERN = re.compile(r"^\s*name (?:one|a|an|your|the)\b", re.IGNORECASE)
+# A reader-experience survey ("people with ADHD, how does it affect you and
+# gaming?") addressed straight at the respondent rather than reporting news.
+_READER_EXPERIENCE_PATTERN = re.compile(
+    r"\bhow does (?:it|that)\b[^?!\n]{0,40}\b(?:you|your)\b|\baffects? you\b",
+    re.IGNORECASE,
+)
+# A "What <X> is best/recommended for <Y>?" help-me-choose prompt ("what version of
+# Linux is best for gaming and why?") rather than a report. Matched against the RAW
+# title (it needs the trailing "?"), so a restated news headline that happens to ask
+# a question ("Will the next Mass Effect release under EA?") is untouched.
+_WHAT_BEST_QUESTION_PATTERN = re.compile(
+    r"\bwhat\b[^?\n]{0,50}\b(?:best|recommend\w*)\b[^?\n]{0,60}\?", re.IGNORECASE
+)
+# A bare "[plural noun] that feel(s) like <season/mood>?" recommendation prompt
+# ("games that feel like October?"). Matched against the raw title for the "?".
+_FEEL_LIKE_ASK_PATTERN = re.compile(
+    r"^\s*(?:games?|things?)\b[^?\n]{0,40}\bfeel(?:s)? like\b[^?\n]{0,40}\?",
+    re.IGNORECASE,
+)
 # Strip surrounding quotes/punctuation so a lead question/opinion is recognised even
 # when the OP wraps it in quotes (e.g. "\"Headshot!\" (UT) ... What sound snippets...").
 _COMMUNITY_STRIP_PATTERN = re.compile(r"[“”\"\'.!:?,\u2018\u2019]")
@@ -321,6 +352,13 @@ def _is_community_discussion(title: str) -> bool:
         or _SHOWN_ME_PATTERN.search(t) is not None
         or _BARE_VERDICT_PATTERN.search(t) is not None
         or _OBSERVATION_PATTERN.search(t) is not None
+        or _JUST_PLAYED_PATTERN.search(t) is not None
+        or _NAME_ONE_PATTERN.search(t) is not None
+        or _READER_EXPERIENCE_PATTERN.search(t) is not None
+        # These two need a literal trailing "?" so they match the raw (un-stripped)
+        # title; _COMMUNITY_STRIP_PATTERN would remove the "?" first.
+        or _WHAT_BEST_QUESTION_PATTERN.search(title) is not None
+        or _FEEL_LIKE_ASK_PATTERN.search(title) is not None
     )
 
 
