@@ -91,8 +91,13 @@ _YOUTUBE_HOST_PATTERN = re.compile(r"^https?://(www\.|m\.)?(youtube\.com|youtu\.
 # trailers" channel, not news. Note the plain "<Game> Release Date" phrasing is NOT a
 # trailer signal on its own -- only the title keywords below trigger trailer routing,
 # and only when the submitted URL is actually a YouTube video.
+#
+# "showcase" carries "\w*" like the other keywords so inflected forms ("...Showcased
+# by Embark Studios...", "showcasing") still trigger trailer routing -- previously a
+# plain "showcase\b" (word-boundary) missed "showcased"/"showcasing" and let a
+# YouTube gameplay-showcase post land in news.
 _TRAILER_TITLE_PATTERN = re.compile(
-    r"\b(?:announc\w*|reveal\w*|teaser\w*|gameplay|showcase|preview\w*|trailer\w*)\b",
+    r"\b(?:announc\w*|reveal\w*|teaser\w*|gameplay|showcas\w*|preview\w*|trailer\w*)\b",
     re.IGNORECASE,
 )
 
@@ -204,8 +209,10 @@ _OPINION_PHRASE_PATTERN = re.compile(
 )
 # A self-post soliciting the community rather than reporting: "Gaming recommendations
 # for quiet a desk job?", "can we normalize menu wrapping?", "should we ...".
+# "reccomend\w*" is the common misspelling that slips past the "recommend\w*" branch.
 _REQUEST_PATTERN = re.compile(
     r"\brecommend\w*\b"
+    r"|\breccomend\w*\b"
     r"|\bcan we (?:please )?(?:normalize|stop|bring|get|make|fix|talk|just)\b"
     r"|\bshould we\b",
     re.IGNORECASE,
@@ -311,6 +318,37 @@ _FEEL_LIKE_ASK_PATTERN = re.compile(
     r"^\s*(?:games?|things?)\b[^?\n]{0,40}\bfeel(?:s)? like\b[^?\n]{0,40}\?",
     re.IGNORECASE,
 )
+# A leading "games that <mix/are/feature/...>?" surrogate-selection prompt ("Games that
+# mix horror and comedy?", "Games that tells stories in creative ways other than
+# cutscenes") solicits the community for titles rather than reporting news. Guarded to
+# self-posts, so a news-article headline starting "Games that ..." (a link post) is
+# never suppressed.
+_GAMES_THAT_PROMPT_PATTERN = re.compile(r"^\s*games?\s+that\b", re.IGNORECASE)
+# A "Best <thing> games?" help-me-choose ask ("New to PC gaming: Best Puzzle / Mystery
+# Games?") rather than a report. Broader than _SUPERLATIVE_QUESTION_PATTERN (which
+# requires a leading "the") and guarded to self-posts at the call site.
+_BEST_GAMES_QUESTION_PATTERN = re.compile(
+    r"\bbest\b[^?\n]{0,50}\bgames?\b[^A-Za-z]{0,8}\?", re.IGNORECASE
+)
+# A community self-post recounting a playthrough/completion "for the Nth time" ("A
+# buddy just finished Witcher 3 for the 14th time.") is an anecdote, not a report. The
+# completion verb is required so a news headline merely mentioning a count ("...for a
+# second time...") can't be suppressed; self-post guard keeps article headlines safe.
+_N_TH_TIME_PATTERN = re.compile(
+    r"\b(?:just )?(?:finished|beat|beaten|completed|replayed|platinum\w*|100%s?)\b"
+    r"[^.\n]{0,40}\bfor (?:the|a) \d+[a-z]* time\b",
+    re.IGNORECASE,
+)
+# A self-post promoting something and asking the reader to act ("...on GOG. Check it out
+# and please vote for it!") is community promotion, not news. "vote for"/"check it out"
+# phrasings never lead a real news self-post.
+_VOTE_PROMO_PATTERN = re.compile(
+    r"\b(?:please )?vote\w* for\b|\bcheck it out\b", re.IGNORECASE
+)
+# A self-post that is a long-form community write-up ("Star Citizen in 2026 - A
+# comprehensive review") rather than a news report. Guarded to self-posts so an outlet's
+# "comprehensive review" article headline (a link post) is never suppressed.
+_COMPREHENSIVE_REVIEW_PATTERN = re.compile(r"\bcomprehensive review\b", re.IGNORECASE)
 # Strip surrounding quotes/punctuation so a lead question/opinion is recognised even
 # when the OP wraps it in quotes (e.g. "\"Headshot!\" (UT) ... What sound snippets...").
 _COMMUNITY_STRIP_PATTERN = re.compile(r"[“”\"\'.!:?,\u2018\u2019]")
@@ -359,6 +397,11 @@ def _is_community_discussion(title: str) -> bool:
         # title; _COMMUNITY_STRIP_PATTERN would remove the "?" first.
         or _WHAT_BEST_QUESTION_PATTERN.search(title) is not None
         or _FEEL_LIKE_ASK_PATTERN.search(title) is not None
+        or _GAMES_THAT_PROMPT_PATTERN.search(t) is not None
+        or _BEST_GAMES_QUESTION_PATTERN.search(title) is not None
+        or _N_TH_TIME_PATTERN.search(t) is not None
+        or _VOTE_PROMO_PATTERN.search(t) is not None
+        or _COMPREHENSIVE_REVIEW_PATTERN.search(t) is not None
     )
 
 
