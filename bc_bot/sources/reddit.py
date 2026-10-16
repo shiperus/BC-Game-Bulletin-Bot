@@ -349,6 +349,39 @@ _VOTE_PROMO_PATTERN = re.compile(
 # comprehensive review") rather than a news report. Guarded to self-posts so an outlet's
 # "comprehensive review" article headline (a link post) is never suppressed.
 _COMPREHENSIVE_REVIEW_PATTERN = re.compile(r"\bcomprehensive review\b", re.IGNORECASE)
+# A self-post that is an AMA ("Ask us anything") -- a community Q&A on r/Games / r/gaming
+# with a developer/profile (dev launches, career retrospectives), e.g. "Right after
+# graduation, I jumped into indie dev ... - AMA" or "AMA: Alex & friends from ATOM TEAM ...
+# Ask us anything!". Solicits the community rather than reporting news. Guarded to
+# self-posts, so a news headline that happens to contain "AMA" as a word (e.g. a medical
+# licensing story) is never suppressed as a link post.
+_AMA_PATTERN = re.compile(r"\bama\b|ask us anything", re.IGNORECASE)
+# A self-post phrased as "Am I the only one ...?" / "the only one ...?" -- a first-person
+# gripe/survey addressed at the community rather than a report (e.g. "Am I the only one
+# that just wants long simple games?"). News self-posts (leaks/rumours) never open with
+# an "am I the only one" identity-confession.
+_ONLY_ONE_PATTERN = re.compile(r"\bthe only one\b", re.IGNORECASE)
+# Recurring daily/weekly community HUB posts build on the day of the week but don't use
+# the "!monday"-style banner _DAY_OF_WEEK_PATTERN requires -- e.g. "Indie Sunday Hub -
+# October 11, 2026". These are recurring community roundups, not reportable news. The
+# follow-on noun is required so "announced for Wednesday" news headlines are untouched.
+_DAY_HUB_PATTERN = re.compile(
+    r"\b(sunday|monday|tuesday|wednesday|thursday|friday|saturday)\b\s+"
+    r"(?:hub|digest|catchup|recap|megathread)\b",
+    re.IGNORECASE,
+)
+# A crowd-sourced subset list request ("Non-sequel games that have numbers in the title",
+# "Co-op games that are fun with two players") -- the OP enumerates a category of games
+# and asks the community to fill in titles, rather than reporting news. Broader than
+# _GAMES_THAT_PROMPT_PATTERN (which requires "games that" at the very start) and guarded
+# to self-posts at the call site so "Open-world games that ..." article headlines (link
+# posts) are never suppressed.
+_SUBSET_GAMES_LIST_PATTERN = re.compile(
+    r"\b(?:non[- ]sequel|co[- ]op|local|multiplayer|single[- ]player|indie|party|"
+    r"open[- ]world|roguelike|puzzle|strategy|horror|retro|classic|chill|relaxing)\s+"
+    r"games?\s+that\b",
+    re.IGNORECASE,
+)
 # Strip surrounding quotes/punctuation so a lead question/opinion is recognised even
 # when the OP wraps it in quotes (e.g. "\"Headshot!\" (UT) ... What sound snippets...").
 _COMMUNITY_STRIP_PATTERN = re.compile(r"[“”\"\'.!:?,\u2018\u2019]")
@@ -402,6 +435,10 @@ def _is_community_discussion(title: str) -> bool:
         or _N_TH_TIME_PATTERN.search(t) is not None
         or _VOTE_PROMO_PATTERN.search(t) is not None
         or _COMPREHENSIVE_REVIEW_PATTERN.search(t) is not None
+        or _AMA_PATTERN.search(t) is not None
+        or _ONLY_ONE_PATTERN.search(t) is not None
+        or _DAY_HUB_PATTERN.search(t) is not None
+        or _SUBSET_GAMES_LIST_PATTERN.search(t) is not None
     )
 
 

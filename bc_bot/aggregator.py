@@ -15,6 +15,19 @@ CONSOLIDATION_THRESHOLD = 80
 # single cycle.
 DUPLICATE_THRESHOLD = 80
 
+# Trailer titles are highly formulaic ("ATMOSFAR EA Release Date Trailer" vs
+# "ATMOSFAR - Official Early Access Release Date Trailer"): a same-game trailer
+# re-upload with a *different* YouTube video ID and slightly different wording scores
+# just under the general DUPLICATE_THRESHOLD on token_set (79.5 vs 80.0 in the real
+# corpus), so the general dedup lets both through and the trailer channel gets the same
+# game's trailer twice. For the trailer pool only, accept a lower token_set when the two
+# titles ALSO share a significant game-name token (>=5 chars) -- a strong signal they
+# describe the same game's trailer rather than two unrelated trailers whose titles
+# merely both contain "Trailer". News/review dedup is untouched (kept at the strict
+# threshold), so unrelated stories can never be conflated.
+_TRAILER_TOKEN_SET_THRESHOLD = 70
+_SIGNIFICANT_TOKEN_MIN_LEN = 5
+
 # Collapses dots inside acronym-style tokens so differently-spelled titles for the
 # same entry still match, e.g. "S.T.A.L.K.E.R. 2 ... Launch Trailer" vs
 # "STALKER 2 ... Launch Trailer" score ~89 (≳ threshold) instead of ~74 (below it).
@@ -86,6 +99,21 @@ def canonical_url(url: str) -> str:
         if match:
             return f"yt:{match.group(1)}"
     return url
+
+
+_WORD_TOKEN_PATTERN = re.compile(r"[A-Za-z]{%d,}" % _SIGNIFICANT_TOKEN_MIN_LEN)
+
+
+def _shares_game_token(title_a: str, title_b: str) -> bool:
+    """True when the two titles share at least one significant (>=5-char) word token.
+    Trailer titles for the same game almost always repeat the game's name (which is
+    longer than common filler like "Trailer"/"Release"), so this is a cheap, reliable
+    same-game signal independent of exact wording."""
+    if _SIGNIFICANT_TOKEN_MIN_LEN < 5:
+        raise RuntimeError("_SIGNIFICANT_TOKEN_MIN_LEN must be >= 5")
+    tokens_a = set(_WORD_TOKEN_PATTERN.findall(title_a.lower()))
+    tokens_b = set(_WORD_TOKEN_PATTERN.findall(title_b.lower()))
+    return bool(tokens_a & tokens_b)
 
 # Phrases that show up in titles announcing, revealing, or confirming a new game --
 # as opposed to discounts, patch notes, esports results, memes, etc.
@@ -224,11 +252,26 @@ def select_fresh(
         # the strict token_sort signal (near-identical phrasing) or the broader
         # cross-outlet token_set signal (same story told by a different outlet, whose
         # headline wording diverges enough that token_sort alone sits under the bar).
-        if any(
+        # Trailer titles get one more, lower-tolerance signal (see
+        # _TRAILER_TOKEN_SET_THRESHOLD) so a same-game trailer re-upload with a
+        # different YouTube video ID and reworded title is still caught.
+        is_duplicate = any(
             _match_title_tokens(item.title, title) >= DUPLICATE_THRESHOLD
             or _cross_outlet_match(item.title, title) >= DUPLICATE_THRESHOLD
             for title in title_pool
+        )
+        if (
+            not is_duplicate
+            and pool_key == "trailer"
+            and any(
+                _cross_outlet_match(item.title, title) >= _TRAILER_TOKEN_SET_THRESHOLD
+                and _shares_game_token(item.title, title)
+                for title in title_pool
+            )
         ):
+            is_duplicate = True
+
+        if is_duplicate:
             continue
 
         fresh.append(item)
