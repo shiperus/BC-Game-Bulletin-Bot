@@ -32,6 +32,10 @@ _META_THREAD_PATTERNS = [
     re.compile(r"\bmonthly\b.*\b(thread|discussion|megathread)\b", re.IGNORECASE),
     re.compile(r"free talk friday", re.IGNORECASE),
     re.compile(r"tech support and basic questions thread", re.IGNORECASE),
+    # r/gaming's recurring weekly indie-game showcase hub ("Indie Sunday Hub - <Month> <Day>, <Year>")
+    # is a community megathread, not reportable news. It shows up every week in "hot" and carries
+    # no external article link, so without this it falls through to the news channel.
+    re.compile(r"\bindie sunday hub\b", re.IGNORECASE),
 ]
 
 # Matches a date embedded in a title, e.g. "06/29/26", "6-29-2026", or "June 29".
@@ -382,6 +386,33 @@ _SUBSET_GAMES_LIST_PATTERN = re.compile(
     r"games?\s+that\b",
     re.IGNORECASE,
 )
+# Advice/decision-help question aimed at the reader ("...DLC. Should I start a new save or is it a
+# late game expansion?"), a first-person seek poll ("Am I the only one that just wants long simple
+# games?"), and a reverie/recollection opener ("Was there a classic game that had a genuinely obtuse
+# unlock or secret") -- all community prompts, not reports. Guarded to self-posts at the call site.
+_ASK_I_PATTERN = re.compile(r"\bshould i\b|\bwould i\b|\bam i the only one\b", re.IGNORECASE)
+_RECOLLECTION_PATTERN = re.compile(r"^(?:was|were) there\b|\bdo you remember\b", re.IGNORECASE)
+# Recommendation-request phrasing on a self-post: "Games with good martial arts combat", "Games
+# similar to Viva Piñata?" -- the OP wants suggestions (a list of titles from the community), not
+# news. The bare "Games with/similar to" opener either ends in a "?" or implies one.
+_RECOMMEND_LIST_PATTERN = re.compile(
+    r"^\s*games?\s+(?:with|similar to|that play like|like)\b|\bwhat games?\s+",
+    re.IGNORECASE,
+)
+# A community poll/opinion solicitation ("In your opinion, what video game has the worst
+# challenges?", "...has, in a way, taught me to get the most enjoyment out of single player games").
+# "in your opinion" and "taught me" are unmistakable opinion/discussion signals on a self-post.
+_OPINION_SOLICIT_PATTERN = re.compile(r"\bin your opinion\b|\btaught me\b", re.IGNORECASE)
+# A first-person "I would say ...", "I do dislike/love ..." verdict on a self-post ("Star Wars:
+# Galactic Racer has got to be the best ... I would say", "New Star Wars games have been great
+# lately. But I do dislike ..."). First-person verdict phrasing mid-title is a personal take, not a
+# report. Reuses the apostrophe-stripped title like _FIRST_PERSON_MID_PATTERN.
+_FIRST_PERSON_VERDICT_PATTERN = re.compile(
+    r"\bi (?:would say|do (?:dislike|hate|love|wish)|personally)\b", re.IGNORECASE
+)
+# A leading all-caps community plea/advice ("PLEASE do some quick research before getting a game ...")
+# is a reader-directed PSA/hot-take, not reportable news.
+_LEAD_PLEASE_PATTERN = re.compile(r"^please\b", re.IGNORECASE)
 # Strip surrounding quotes/punctuation so a lead question/opinion is recognised even
 # when the OP wraps it in quotes (e.g. "\"Headshot!\" (UT) ... What sound snippets...").
 _COMMUNITY_STRIP_PATTERN = re.compile(r"[“”\"\'.!:?,\u2018\u2019]")
@@ -439,6 +470,12 @@ def _is_community_discussion(title: str) -> bool:
         or _ONLY_ONE_PATTERN.search(t) is not None
         or _DAY_HUB_PATTERN.search(t) is not None
         or _SUBSET_GAMES_LIST_PATTERN.search(t) is not None
+        or _ASK_I_PATTERN.search(t) is not None
+        or _RECOLLECTION_PATTERN.search(t) is not None
+        or _RECOMMEND_LIST_PATTERN.search(t) is not None
+        or _OPINION_SOLICIT_PATTERN.search(t) is not None
+        or _FIRST_PERSON_VERDICT_PATTERN.search(t) is not None
+        or _LEAD_PLEASE_PATTERN.search(t) is not None
     )
 
 

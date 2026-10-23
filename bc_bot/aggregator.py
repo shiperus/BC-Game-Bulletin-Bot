@@ -45,7 +45,7 @@ _TITLE_NORM_PATTERN = re.compile(r"(?<=\b[A-Za-z])\.(?=[A-Za-z])")
 # corpus: this normalization lifts a real cross-outlet duplicate over the threshold
 # while crossing threshold for no distinct-story pair.
 _OUTLET_PREFIX_PATTERN = re.compile(
-    r"^\s*(?:bloomberg|jason schreier|schreier|thr|the verge|eurogamer|games radar|"
+    r"^\s*(?:bloomberg|jason schreier|schreier|vgc|thr|the verge|eurogamer|games radar|"
     r"insider gaming|insider-gaming|tom henderson|tom warren|kotaku|ign|game spot|"
     r"gamespot|rock paper shotgun)\s*:\s*",
     re.IGNORECASE,
