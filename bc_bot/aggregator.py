@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 from collections import defaultdict
+from datetime import datetime, timedelta, timezone
 
 from rapidfuzz import fuzz, utils
 
@@ -27,6 +28,20 @@ DUPLICATE_THRESHOLD = 80
 # threshold), so unrelated stories can never be conflated.
 _TRAILER_TOKEN_SET_THRESHOLD = 70
 _SIGNIFICANT_TOKEN_MIN_LEN = 5
+
+# Plain-news same-story dedup needs a *time-bounded* second signal: the strict
+# token_set >= 80 bar catches restatements of the same story, but the same game
+# routinely has several distinct stories in a day (e.g. "Phantom Blade Zero review
+# embargo lifts" vs "Phantom Blade Zero Digital Foundry tech review"), so a looser
+# word-overlap bar alone would conflate them. Restricting the looser signal to
+# history from the last 24h (i.e. the same news cycle) is what separates a
+# re-reported story ("Alien: Isolation 2 ... Physical Edition" on the official
+# YouTube Q&A and 12h later on IGN -- token_set ~67) from same-game stories on
+# different days. Calibrated against the posted corpus: token_set >= 60 + a shared
+# significant game token + the 24h window catches every real cross-outlet duplicate
+# within a cycle and merges no distinct story.
+_NEWS_SAME_STORY_WINDOW = timedelta(hours=24)
+_NEWS_SAME_STORY_TOKEN_SET_THRESHOLD = 60
 
 # Collapses dots inside acronym-style tokens so differently-spelled titles for the
 # same entry still match, e.g. "S.T.A.L.K.E.R. 2 ... Launch Trailer" vs
@@ -207,7 +222,8 @@ def rank(items: list[TrendingItem]) -> list[TrendingItem]:
 
 
 def select_fresh(
-    items: list[TrendingItem], recent_posts: list[tuple[str, str, str | None]]
+    items: list[TrendingItem],
+    recent_posts: list[tuple[str, str, str | None, str | None]],
 ) -> list[TrendingItem]:
     """Filter out items that duplicate an already-posted story, by exact link or
     fuzzy title match, against both prior-cycle history and items already kept in
@@ -221,15 +237,26 @@ def select_fresh(
     a "<Game> Review" news article. Pre-migration rows with no channel (NULL) are
     treated as news history, preserving prior behavior for undifferentiated rows.
     """
-    seen_urls = {canonical_url(url) for _, url, _ in recent_posts}
+    def _parse_posted_at(raw: str | None) -> datetime | None:
+        if not raw:
+            return None
+        try:
+            return datetime.fromisoformat(raw)
+        except ValueError:
+            return None
 
-    # History title pools per channel. Pre-migration rows (channel is NULL) predate
-    # channel routing and are folded into the news pool.
-    history_titles: dict[str, list[str]] = defaultdict(list)
-    for title, _, channel in recent_posts:
+    seen_urls = {canonical_url(url) for _, url, _, _ in recent_posts}
+
+    # History title pools per channel. Each entry carries its posted_at so the
+    # time-bounded news same-story signal can limit itself to the same news
+    # cycle. Pre-migration rows (channel is NULL) predate channel routing and
+    # are folded into the news pool.
+    history_titles: dict[str, list[tuple[str, datetime | None]]] = defaultdict(list)
+    for title, _, channel, posted_at in recent_posts:
         key = channel if channel in ("news", "review", "trailer") else "news"
-        history_titles[key].append(title)
+        history_titles[key].append((title, _parse_posted_at(posted_at)))
 
+    now = datetime.now(timezone.utc)
     fresh: list[TrendingItem] = []
     kept_titles_by_flags: dict[tuple[bool, bool], list[str]] = {}
     for item in items:
@@ -245,8 +272,8 @@ def select_fresh(
         else:
             pool_key = "trailer" if item.is_trailer_thread else "review"
 
-        title_pool = list(history_titles[pool_key])
-        title_pool += kept_titles_by_flags.get(flag_key, [])
+        history = list(history_titles[pool_key])
+        kept = kept_titles_by_flags.get(flag_key, [])
 
         # A title is a duplicate of an already-posted story if it matches by either
         # the strict token_sort signal (near-identical phrasing) or the broader
@@ -258,7 +285,11 @@ def select_fresh(
         is_duplicate = any(
             _match_title_tokens(item.title, title) >= DUPLICATE_THRESHOLD
             or _cross_outlet_match(item.title, title) >= DUPLICATE_THRESHOLD
-            for title in title_pool
+            for title, _ in history
+        ) or any(
+            _match_title_tokens(item.title, title) >= DUPLICATE_THRESHOLD
+            or _cross_outlet_match(item.title, title) >= DUPLICATE_THRESHOLD
+            for title in kept
         )
         if (
             not is_duplicate
@@ -266,10 +297,39 @@ def select_fresh(
             and any(
                 _cross_outlet_match(item.title, title) >= _TRAILER_TOKEN_SET_THRESHOLD
                 and _shares_game_token(item.title, title)
-                for title in title_pool
+                for title, _ in history
             )
         ):
             is_duplicate = True
+        if (
+            not is_duplicate
+            and pool_key == "trailer"
+            and any(
+                _cross_outlet_match(item.title, title) >= _TRAILER_TOKEN_SET_THRESHOLD
+                and _shares_game_token(item.title, title)
+                for title in kept
+            )
+        ):
+            is_duplicate = True
+
+        # News same-story signal, bounded to the same news cycle: a re-reported
+        # story arrives within ~24h (or within this very cycle), so only history
+        # within that window (plus candidates kept this cycle, which are by
+        # definition "now") is eligible for the looser token_set + shared-game-token
+        # bar. Without the window, same-game stories on different days (e.g. two
+        # "released N years ago today" anniversary posts) would be conflated.
+        if not is_duplicate and pool_key == "news":
+            recent_history = [
+                title
+                for title, posted_at in history
+                if posted_at is None or now - posted_at <= _NEWS_SAME_STORY_WINDOW
+            ]
+            if any(
+                _cross_outlet_match(item.title, title) >= _NEWS_SAME_STORY_TOKEN_SET_THRESHOLD
+                and _shares_game_token(item.title, title)
+                for title in recent_history + kept
+            ):
+                is_duplicate = True
 
         if is_duplicate:
             continue

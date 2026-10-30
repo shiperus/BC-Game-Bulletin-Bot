@@ -64,6 +64,10 @@ class BcGamingBot(discord.Client):
         consolidated = aggregator.consolidate(reddit_items)
         aggregator.boost_announcements(consolidated)
         aggregator.enrich_with_articles(consolidated, articles)
+        # Enrichment can attach a YouTube URL to a link post whose title already carries a
+        # trailer keyword; reclassify those as trailer items so they reach the trailer
+        # channel instead of news (see flag_post_enrichment_trailers).
+        reddit.flag_post_enrichment_trailers(consolidated)
         ranked = aggregator.rank(consolidated)
 
         recent_posts = self.store.recent_posts(self.config.retention_days)
