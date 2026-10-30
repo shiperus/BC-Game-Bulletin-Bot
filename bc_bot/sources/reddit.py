@@ -413,6 +413,52 @@ _FIRST_PERSON_VERDICT_PATTERN = re.compile(
 # A leading all-caps community plea/advice ("PLEASE do some quick research before getting a game ...")
 # is a reader-directed PSA/hot-take, not reportable news.
 _LEAD_PLEASE_PATTERN = re.compile(r"^please\b", re.IGNORECASE)
+# A self-post that is a crowd-sourced reminder/retrospective list ("With the Bioware
+# Shutdown, Here's a Reminder of EA's History of Acquisitions") -- the OP compiles a
+# community recap rather than reporting news. "here's a reminder"/"a reminder of"
+# phrasings never lead a news self-post (leaks/rumours).
+_REMINDER_LIST_PATTERN = re.compile(
+    r"\bhere'?s a reminder\b|\ba reminder of\b", re.IGNORECASE
+)
+# A reader-directed "you were cheated" gripe ("If you bought Blightstone in early
+# access you just got robbed.") -- a consumer complaint/anecdote aimed at the
+# community, not a report.
+_YOU_GOT_SCREWED_PATTERN = re.compile(
+    r"\byou (?:just )?(?:got|were) (?:robbed|scammed|screwed|ripped off)\b", re.IGNORECASE
+)
+# A "That one <thing> from <game> ..." recollection poll ("That one quote/phrase from
+# the game that sticks in your head for +10 years?") -- the OP invites the community to
+# share its own pick, not a report.
+_THAT_ONE_PATTERN = re.compile(r"^\s*that one\b", re.IGNORECASE)
+# A community-opinion question aimed at a company's course of action ("Should Steam
+# add an AI filter?") rather than a report. Matched against the RAW title so the
+# trailing "?" is still present; guarded to self-posts at the call site.
+_SHOULD_COMPANY_QUESTION_PATTERN = re.compile(
+    r"\bshould (?:steam|valve|nintendo|sony|microsoft|xbox|ea|ubisoft|capcom|rockstar|"
+    r"epic|bethesda|activision|blizzard|cd projekt|fromsoftware|insomniac|bungie|konami|"
+    r"square enix|playstation)\b[^?\n]{0,60}\?",
+    re.IGNORECASE,
+)
+# A self-post that opens with an explicit "Discussion:" banner ("Discussion: EA is
+# squatting on a gold mine of dormant IPs") is a community-discussion prompt, not a
+# report. Only matched at the very start on self-posts, so an article headline that
+# happens to contain "discussion" later on is untouched.
+_DISCUSSION_PREFIX_PATTERN = re.compile(r"^\s*discussion\b\s*[:：]?", re.IGNORECASE)
+# A normative community gripe about the industry ("...is ruining online games. Developers
+# are punishing players instead of addressing the problem.") -- an opinion post, not a
+# report. Guarded to self-posts so an article headline with "ruining" (a link post) is safe.
+_RUINING_GRIPE_PATTERN = re.compile(r"\b(?:is|are) ruining\b", re.IGNORECASE)
+# A survey soliciting examples ("Examples of video game franchises where they took on
+# feedback...?") -- the OP asks the community to enumerate titles, not a report.
+_EXAMPLES_OF_PATTERN = re.compile(r"^\s*examples? of\b", re.IGNORECASE)
+# A retrospective recap ("A look back at The Game Awards 2025 Trailers and Announcements
+# and how they reviewed!") -- a community roundup, not reportable news. Guarded to
+# self-posts so a news article titled "A look back at ..." (a link post) is never suppressed.
+_LOOK_BACK_PATTERN = re.compile(r"^\s*a look back at\b", re.IGNORECASE)
+# A long-form community review write-up ("A Review of RAGE (2011) | What's to Rage About
+# RAGE?") -- a user's opinion piece, not a report. Guarded to self-posts so a link to an
+# outlet's review article is never suppressed.
+_A_REVIEW_OF_PATTERN = re.compile(r"^\s*a review of\b", re.IGNORECASE)
 # Strip surrounding quotes/punctuation so a lead question/opinion is recognised even
 # when the OP wraps it in quotes (e.g. "\"Headshot!\" (UT) ... What sound snippets...").
 _COMMUNITY_STRIP_PATTERN = re.compile(r"[“”\"\'.!:?,\u2018\u2019]")
@@ -476,6 +522,15 @@ def _is_community_discussion(title: str) -> bool:
         or _OPINION_SOLICIT_PATTERN.search(t) is not None
         or _FIRST_PERSON_VERDICT_PATTERN.search(t) is not None
         or _LEAD_PLEASE_PATTERN.search(t) is not None
+        or _REMINDER_LIST_PATTERN.search(t) is not None
+        or _YOU_GOT_SCREWED_PATTERN.search(t) is not None
+        or _THAT_ONE_PATTERN.search(t) is not None
+        or _DISCUSSION_PREFIX_PATTERN.search(t) is not None
+        or _RUINING_GRIPE_PATTERN.search(t) is not None
+        or _EXAMPLES_OF_PATTERN.search(t) is not None
+        or _LOOK_BACK_PATTERN.search(t) is not None
+        or _A_REVIEW_OF_PATTERN.search(t) is not None
+        or _SHOULD_COMPANY_QUESTION_PATTERN.search(title) is not None
     )
 
 
@@ -583,6 +638,30 @@ def fetch_trending(config: Config) -> tuple[list[TrendingItem], dict[str, str]]:
             logger.exception("Failed to fetch trending posts from r/%s", subreddit_name)
 
     return [item for item in items if item.title and item.url], raw_feeds
+
+def flag_post_enrichment_trailers(items: list[TrendingItem]) -> None:
+    """Re-classify items whose final (post-enrichment) link is a YouTube video with a
+    trailer-class title as trailer-channel items.
+
+    At fetch time an item is only flagged ``is_trailer_thread`` when the
+    *Reddit-submitted* URL is itself a YouTube link. But RSS enrichment can attach a
+    matching YouTube article/video URL afterwards -- e.g. a Reddit link post whose
+    final link (``item.link``) becomes ``https://youtube.com/watch?v=...`` -- while
+    the title already contains a trailer keyword (announce/reveal/teaser/gameplay/
+    showcase/preview/trailer). Such items are game-trailer-channel content and were
+    falling through to the news channel. Review threads are never touched, and items
+    whose final link is not a YouTube video are left alone.
+    """
+    for item in items:
+        if item.is_review_thread or item.is_trailer_thread:
+            continue
+        if (
+            item.link
+            and _TRAILER_TITLE_PATTERN.search(item.title)
+            and _YOUTUBE_HOST_PATTERN.search(item.link)
+        ):
+            item.is_trailer_thread = True
+
 
 def _parse_with_retry(url: str, user_agent: str, subreddit_name: str) -> tuple[feedparser.FeedParserDict, str] | None:
     """Parse a subreddit feed, retrying with backoff on HTTP 429."""
