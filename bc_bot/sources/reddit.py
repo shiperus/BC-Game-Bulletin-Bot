@@ -83,9 +83,20 @@ _IMAGE_EXTENSION_PATTERN = re.compile(
 # get special-cased: pull the OpenCritic link out of the post body instead, and
 # aggregator.enrich_with_articles() skips RSS matching for them entirely.
 _REVIEW_THREAD_PATTERN = re.compile(r"\breview(s)?\s+(mega)?thread\b", re.IGNORECASE)
+# OpenCritic aggregator anchor inside a review-thread body. Subreddits format the
+# link text differently -- most use a plain-text anchor ("OpenCritic - 88 average -
+# 95% recommended - 58 reviews"), but some bold it with inner HTML
+# ("<strong>OpenCritic - 85 average ...</strong>"). The old `([^<]+)</a>` only
+# matched a tag-free anchor, so a bolded aggregator line silently failed extraction
+# and the review thread went out with the Reddit comments URL instead of the
+# OpenCritic page (e.g. r/Games "Call of Duty: Modern Warfare 4 - Review Thread").
+# Match any inner content up to the anchor's closing tag instead, then strip tags
+# before parsing the stats.
 _OPENCRITIC_LINK_PATTERN = re.compile(
-    r'href="(https://opencritic\.com/game/[^"]+)">([^<]+)</a>'
+    r'href="(https://opencritic\.com/game/[^"]+)"[^>]*>(.*?)</a>',
+    re.IGNORECASE | re.DOTALL,
 )
+_HTML_TAG_PATTERN = re.compile(r"<[^>]+>")
 
 # Filter for Trailer thread and youtube links inside the thread
 _YOUTUBE_HOST_PATTERN = re.compile(r"^https?://(www\.|m\.)?(youtube\.com|youtu\.be)/", re.IGNORECASE)
@@ -136,7 +147,11 @@ def _extract_opencritic(summary: str) -> tuple[str, str | None] | None:
         return None
 
     url = unescape(match.group(1))
-    stats_match = _OPENCRITIC_STATS_PATTERN.search(unescape(match.group(2)))
+    # Anchor text may carry inner HTML (e.g. <strong>) -- strip it so the stats
+    # parser sees the plain label. Only the label is used for stats; the href is
+    # the OpenCritic link either way.
+    link_text = _HTML_TAG_PATTERN.sub("", match.group(2))
+    stats_match = _OPENCRITIC_STATS_PATTERN.search(unescape(link_text))
     if stats_match is None:
         return url, None
 
