@@ -474,6 +474,21 @@ _LOOK_BACK_PATTERN = re.compile(r"^\s*a look back at\b", re.IGNORECASE)
 # RAGE?") -- a user's opinion piece, not a report. Guarded to self-posts so a link to an
 # outlet's review article is never suppressed.
 _A_REVIEW_OF_PATTERN = re.compile(r"^\s*a review of\b", re.IGNORECASE)
+# A self-post that opens with a first-person identity/disposition claim ("As someone
+# with zero brand loyalty, the issue Xbox faces with people like me is ...") is a
+# personal opinion/anecdote grounded in the OP's own perspective, not reportable news.
+# Guarded to self-posts, so a news headline that happens to open "As someone ..."
+# (a link post) is never suppressed -- news articles don't report from the reader's
+# personal disposition anyway.
+_AS_SOMEONE_PATTERN = re.compile(r"^\s*as someone\b", re.IGNORECASE)
+# A self-post that addresses a game's player base and immediately asks its opinion
+# ("Phantom Blade Zero players, is it actually as satisfying as it looks?") is a
+# community poll, not a report. The "players,"-followed-by-a-question-word signal never
+# leads a news-article headline, and the self-post guard keeps that safe regardless.
+_PLAYER_POLL_PATTERN = re.compile(
+    r"\bplayers?\s*,\s*(?:is|are|do|does|how|what|who|when|where|why|would|did)\b",
+    re.IGNORECASE,
+)
 # Strip surrounding quotes/punctuation so a lead question/opinion is recognised even
 # when the OP wraps it in quotes (e.g. "\"Headshot!\" (UT) ... What sound snippets...").
 _COMMUNITY_STRIP_PATTERN = re.compile(r"[“”\"\'.!:?,\u2018\u2019]")
@@ -545,6 +560,9 @@ def _is_community_discussion(title: str) -> bool:
         or _EXAMPLES_OF_PATTERN.search(t) is not None
         or _LOOK_BACK_PATTERN.search(t) is not None
         or _A_REVIEW_OF_PATTERN.search(t) is not None
+        or _AS_SOMEONE_PATTERN.search(t) is not None
+        # Needs the literal comma, which _COMMUNITY_STRIP_PATTERN removes -- match raw.
+        or _PLAYER_POLL_PATTERN.search(title) is not None
         or _SHOULD_COMPANY_QUESTION_PATTERN.search(title) is not None
     )
 
