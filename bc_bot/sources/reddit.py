@@ -291,12 +291,12 @@ _MADE_ME_PATTERN = re.compile(
 )
 _SHOWN_ME_PATTERN = re.compile(r"\bshown me (?:that|how)\b", re.IGNORECASE)
 # A bare evaluative verdict on a self-post ("Blood of Dawnwalker is very good",
-# "Onimusha is incredible") is an opinion post. End-anchored so a phrase like
-# "…is good news" in the middle of a report isn't suppressed; self-post guard means
-# article headlines are never at risk.
+# "Onimusha is incredible", "Yeah, Queens Domain is awesome") is an opinion post.
+# End-anchored so a phrase like "…is good news" in the middle of a report isn't
+# suppressed; self-post guard means article headlines are never at risk.
 _BARE_VERDICT_PATTERN = re.compile(
     r"\bis (?:very |so |really |incredibly )?(?:good|great|incredible|amazing|"
-    r"fantastic|excellent|wonderful|terrible|awful|boring|overrated|underrated)\b\s*$",
+    r"fantastic|excellent|wonderful|terrible|awful|boring|overrated|underrated|awesome)\b\s*$",
     re.IGNORECASE,
 )
 # A subjective observation/anecdote restated as a general truth ("Sometimes is nice
@@ -407,11 +407,13 @@ _SUBSET_GAMES_LIST_PATTERN = re.compile(
 # unlock or secret") -- all community prompts, not reports. Guarded to self-posts at the call site.
 _ASK_I_PATTERN = re.compile(r"\bshould i\b|\bwould i\b|\bam i the only one\b", re.IGNORECASE)
 _RECOLLECTION_PATTERN = re.compile(r"^(?:was|were) there\b|\bdo you remember\b", re.IGNORECASE)
-# Recommendation-request phrasing on a self-post: "Games with good martial arts combat", "Games
-# similar to Viva Piñata?" -- the OP wants suggestions (a list of titles from the community), not
-# news. The bare "Games with/similar to" opener either ends in a "?" or implies one.
+# Recommendation-request phrasing on a self-post: "Games with good martial arts combat", "Games similar to
+# Viva Piñata?", "Games for ages 8-10 that have a gripping story…" -- the OP wants suggestions (a list of
+# titles from the community), not news. The bare "Games with/similar to/like/for" opener either ends in a "?"
+# or implies one. "for" covers audience-scoped requests ("Games for ages 8-10 that …") that fell between the
+# "with/similar to" branch and the leading "games that" prompt pattern.
 _RECOMMEND_LIST_PATTERN = re.compile(
-    r"^\s*games?\s+(?:with|similar to|that play like|like)\b|\bwhat games?\s+",
+    r"^\s*games?\s+(?:for|with|similar to|that play like|like)\b|\bwhat games?\s+",
     re.IGNORECASE,
 )
 # A community poll/opinion solicitation ("In your opinion, what video game has the worst
