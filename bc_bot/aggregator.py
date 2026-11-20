@@ -43,6 +43,35 @@ _SIGNIFICANT_TOKEN_MIN_LEN = 5
 _NEWS_SAME_STORY_WINDOW = timedelta(hours=24)
 _NEWS_SAME_STORY_TOKEN_SET_THRESHOLD = 60
 
+# Some cross-outlet restatements of the same story are re-reported just OUTSIDE
+# the 24h window -- e.g. "Wolfenstein 3 Confirmed to Be in Development at
+# MachineGames" 24h+31s after the Resetera thread of the same announcement,
+# "Reuters: Unity in discussions for buyout from Silver Lake and Saudi Arabia
+# (PIF)" ~28h after the first Reuters write-up, and "Doom Developer id Software
+# Confirms New Project..." 36h later -- and the strict window let all of them
+# through as separate news posts. The original 24h bar (token_set >= 60 +
+# shared game token) stays as-is; a second, higher-confidence signal covers the
+# 24-48h band at token_set >= 65 + shared game token. Verified against the
+# posted corpus: the two same-game-but-different-story pairs in the 24-48h band
+# (WoW Forever launch RAM vs. world-first-level-60 at 61.6; Nier Automata
+# 366GB-bloat report vs. dev-fix report at 64.0) both sit below 65 and stay
+# unmerged, while every real cross-outlet restatement in the band scores >=
+# 66.7.
+_NEWS_SAME_STORY_EXTENDED_WINDOW = timedelta(hours=48)
+_NEWS_SAME_STORY_EXTENDED_TOKEN_SET_THRESHOLD = 65
+
+# Within a single crawl cycle two outlets can file the SAME story with highly
+# divergent headlines ("Ubisoft Reportedly Greenlights New Rainbow Six: Vegas
+# Game After 18 Years..." vs "Rainbow Six: Vegas Series Set to Return After
+# Nearly Two Decades - Insider Gaming" -- token_set ~58) that falls below even
+# the 60 bar. The in-cycle candidate list (`kept`) is tiny and same-minute by
+# construction, so a lower bar is safe there -- PROVIDED the two headlines share
+# at least two significant tokens, which excludes same-cycle pairs that merely
+# share a generic stat word (e.g. two unrelated sales-figures posts sharing only
+# "units", token_set ~59).
+_NEWS_IN_CYCLE_TOKEN_SET_THRESHOLD = 55
+_NEWS_IN_CYCLE_MIN_SHARED_TOKENS = 2
+
 # Collapses dots inside acronym-style tokens so differently-spelled titles for the
 # same entry still match, e.g. "S.T.A.L.K.E.R. 2 ... Launch Trailer" vs
 # "STALKER 2 ... Launch Trailer" score ~89 (≳ threshold) instead of ~74 (below it).
@@ -119,16 +148,19 @@ def canonical_url(url: str) -> str:
 _WORD_TOKEN_PATTERN = re.compile(r"[A-Za-z]{%d,}" % _SIGNIFICANT_TOKEN_MIN_LEN)
 
 
-def _shares_game_token(title_a: str, title_b: str) -> bool:
-    """True when the two titles share at least one significant (>=5-char) word token.
-    Trailer titles for the same game almost always repeat the game's name (which is
-    longer than common filler like "Trailer"/"Release"), so this is a cheap, reliable
-    same-game signal independent of exact wording."""
+def _shares_game_token(title_a: str, title_b: str, min_count: int = 1) -> bool:
+    """True when the two titles share at least ``min_count`` significant
+    (>=5-char) word token(s). Trailer titles for the same game almost always
+    repeat the game's name (which is longer than common filler like
+    "Trailer"/"Release"), so with the default count this is a cheap, reliable
+    same-game signal independent of exact wording. The in-cycle news signal
+    requires ``min_count=2`` so two same-cycle headlines that only share a
+    generic stat word ("units", "sales") aren't conflated."""
     if _SIGNIFICANT_TOKEN_MIN_LEN < 5:
         raise RuntimeError("_SIGNIFICANT_TOKEN_MIN_LEN must be >= 5")
     tokens_a = set(_WORD_TOKEN_PATTERN.findall(title_a.lower()))
     tokens_b = set(_WORD_TOKEN_PATTERN.findall(title_b.lower()))
-    return bool(tokens_a & tokens_b)
+    return len(tokens_a & tokens_b) >= min_count
 
 # Phrases that show up in titles announcing, revealing, or confirming a new game --
 # as opposed to discounts, patch notes, esports results, memes, etc.
@@ -318,6 +350,11 @@ def select_fresh(
         # definition "now") is eligible for the looser token_set + shared-game-token
         # bar. Without the window, same-game stories on different days (e.g. two
         # "released N years ago today" anniversary posts) would be conflated.
+        # A second tier covers re-reports that arrive 24-48h later at a higher
+        # token_set bar (65 instead of 60), and the in-cycle `kept` list gets its
+        # own lower bar (55) that additionally requires >= 2 shared significant
+        # tokens -- same-cycle pairs that only share a generic stat word stay
+        # distinct.
         if not is_duplicate and pool_key == "news":
             recent_history = [
                 title
@@ -328,6 +365,24 @@ def select_fresh(
                 _cross_outlet_match(item.title, title) >= _NEWS_SAME_STORY_TOKEN_SET_THRESHOLD
                 and _shares_game_token(item.title, title)
                 for title in recent_history + kept
+            ):
+                is_duplicate = True
+            if not is_duplicate:
+                extended_history = [
+                    title
+                    for title, posted_at in history
+                    if posted_at is None or now - posted_at <= _NEWS_SAME_STORY_EXTENDED_WINDOW
+                ]
+                if any(
+                    _cross_outlet_match(item.title, title) >= _NEWS_SAME_STORY_EXTENDED_TOKEN_SET_THRESHOLD
+                    and _shares_game_token(item.title, title)
+                    for title in extended_history
+                ):
+                    is_duplicate = True
+            if not is_duplicate and any(
+                _cross_outlet_match(item.title, title) >= _NEWS_IN_CYCLE_TOKEN_SET_THRESHOLD
+                and _shares_game_token(item.title, title, _NEWS_IN_CYCLE_MIN_SHARED_TOKENS)
+                for title in kept
             ):
                 is_duplicate = True
 
