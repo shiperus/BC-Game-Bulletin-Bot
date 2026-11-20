@@ -69,8 +69,16 @@ _MEGATHREAD_PATTERN = re.compile(r"\b(?:mega\s*thread|megathread)\b", re.IGNOREC
 # Direct image/video hosts and file extensions Reddit posts commonly link to (memes,
 # screenshots, clips) rather than a news article. These carry no headline of their own
 # to corroborate or enrich, so they're not useful as "trending news" candidates.
+# The second alternative covers imgur's non-cdn pages (albums like imgur.com/a/<id>,
+# galleries, and direct image pages like imgur.com/<id>) that previously slipped
+# through: they're community media showcases (fan creations, gameplay clips), not
+# articles, e.g. "I resurrected Blobo..." (imgur.com/a/ipsn9jE) or "Clearing The
+# House of Infected (Bodycam)" (imgur.com/3j6FKYD). Anchored so imgur.com/user/...
+# profile pages are not treated as bare media links.
 _IMAGE_HOST_PATTERN = re.compile(
-    r"^https?://(i\.redd\.it|i\.imgur\.com|preview\.redd\.it|v\.redd\.it)/", re.IGNORECASE
+    r"^https?://(i\.redd\.it|preview\.redd\.it|v\.redd\.it|i\.imgur\.com|m\.imgur\.com)/"
+    r"|^https?://(?:www\.)?imgur\.com/(?:a/|gallery/)?[A-Za-z0-9]+/?$",
+    re.IGNORECASE,
 )
 _IMAGE_EXTENSION_PATTERN = re.compile(
     r"\.(jpe?g|png|gif|gifv|webp|bmp|mp4)(\?.*)?$", re.IGNORECASE
@@ -243,10 +251,14 @@ _DIRECTED_AT_READER_PATTERN = re.compile(
     r"\byou (?:did|ever|100\w*|miss|remember|regret)\b",
     re.IGNORECASE,
 )
-# A self-post that opens with an explicit "(unpopular opinion)"/"rant" disclaimer is a
-# first-person opinion post regardless of what follows ("Rant: Don't announce a game
-# unless you have gameplay to show for it"). News reports never self-disclaim as a rant.
-_RANT_PREFIX_PATTERN = re.compile(r"^\s*(?:rant|unpopular opinion)(?:\s*[:?\u2014\u2013]|\b)", re.IGNORECASE)
+# A self-post that opens with an explicit "(unpopular opinion)"/"rant"/"hot take"
+# disclaimer is a first-person opinion post regardless of what follows ("Rant:
+# Don't announce a game unless you have gameplay to show for it", "Hot take -
+# higher difficulty should lower your health, not give enemies more"). News
+# reports never self-disclaim as a rant or a hot take.
+_RANT_PREFIX_PATTERN = re.compile(
+    r"^\s*(?:rant|unpopular opinion|hot take)(?:\s*[:?\u2014\u2013]|\b)", re.IGNORECASE
+)
 # A comparison/share prompt aimed at players who have played something ("For those that
 # have played Valheim and Dragonwilds…") solicits the community, it doesn't report news.
 _MID_COMMUNITY_SEEK_PATTERN = re.compile(
@@ -483,6 +495,32 @@ _A_REVIEW_OF_PATTERN = re.compile(r"^\s*a review of\b", re.IGNORECASE)
 # (a link post) is never suppressed -- news articles don't report from the reader's
 # personal disposition anyway.
 _AS_SOMEONE_PATTERN = re.compile(r"^\s*as someone\b", re.IGNORECASE)
+# A bare "Game suggestions" request (a self-post asking the community to name
+# games, often with no other wording) is a recommendation solicitation, not a
+# report. "Game suggestions" never leads a news-article headline, and the
+# self-post guard keeps it safe regardless.
+_GAME_SUGGESTIONS_PATTERN = re.compile(r"\bgame\s*suggestions?\b", re.IGNORECASE)
+# A self-post that opens with "Wondering ..." ("Wondering if there's a game
+# like that?") solicits the community's opinion rather than reporting news.
+# News self-posts (leaks/rumours) never open "Wondering".
+_WONDERING_PATTERN = re.compile(r"^\s*wondering\b", re.IGNORECASE)
+# A self-post asking what to buy / expressing purchasing indecision
+# ("Conflicted about what to buy (timing, value for money)") is a
+# help-me-choose advice request, not a report.
+_WHAT_TO_BUY_PATTERN = re.compile(r"\bwhat to buy\b|\bconflicted about\b", re.IGNORECASE)
+# A first-person retrospective anecdote ("24 years ago on October 29th, 2002,
+# I worked at my local mall's Software Etc during the Vice City midnight
+# launch") is a memory share, not a report.
+_YEARS_AGO_PATTERN = re.compile(r"^\s*\d+\s+years? ago\b", re.IGNORECASE)
+# A subreddit/community anniversary celebration ("Celebrating 15 years of
+# /r/Games") is community housekeeping, not gaming news.
+_CELEBRATING_YEARS_PATTERN = re.compile(r"\bcelebrat\w* \d+ years?\b", re.IGNORECASE)
+# A bare "X or Y" hardware/purchase choice question ("OLED or mini LED") is a
+# poll/help-me-choose, not a report. Guarded to self-posts, so an article
+# headline (a link post) that happens to end in "or Y" is never suppressed.
+_CHOICE_OR_PATTERN = re.compile(
+    r"^[^.!?\n]{1,60}\s+or\s+[^.!?\n]{0,40}$", re.IGNORECASE
+)
 # A self-post that addresses a game's player base and immediately asks its opinion
 # ("Phantom Blade Zero players, is it actually as satisfying as it looks?") is a
 # community poll, not a report. The "players,"-followed-by-a-question-word signal never
@@ -566,6 +604,12 @@ def _is_community_discussion(title: str) -> bool:
         # Needs the literal comma, which _COMMUNITY_STRIP_PATTERN removes -- match raw.
         or _PLAYER_POLL_PATTERN.search(title) is not None
         or _SHOULD_COMPANY_QUESTION_PATTERN.search(title) is not None
+        or _GAME_SUGGESTIONS_PATTERN.search(t) is not None
+        or _WONDERING_PATTERN.search(t) is not None
+        or _WHAT_TO_BUY_PATTERN.search(t) is not None
+        or _YEARS_AGO_PATTERN.search(t) is not None
+        or _CELEBRATING_YEARS_PATTERN.search(t) is not None
+        or _CHOICE_OR_PATTERN.search(t) is not None
     )
 
 
