@@ -101,21 +101,29 @@ the comments page.
 
 ## Weekly review
 
-Every cycle stores its raw input (`cycle_raw_feeds`) and one decision per post
-(`cycle_decisions`: which filter rule dropped it, merged, duplicate, over the
-per-cycle cap, or posted).
+Everything needed to review the bot's logic is in the SQLite DB (`DB_PATH`),
+kept for `RETENTION_DAYS`:
 
-```
-python -m bc_bot.report              # what happened in the last 7 days
-python -m bc_bot.report --days 14 --high-score 1000
-python -m bc_bot.replay              # re-run archived Devvit payloads through the
-                                     # current rules and list decisions that change
-```
+| Table | One row per | Key columns |
+| --- | --- | --- |
+| `cycle_raw_feeds` | subreddit per cycle | `raw_feed`: the exact input -- RSS XML, or the Devvit payload JSON (starts with `{`) |
+| `cycle_decisions` | post per stage per cycle | `stage`, `decision`, `reason`, `score`, `num_comments`, `flair`, `url`, `reddit_source` |
+| `posted_items` | item posted | `title`, `url`, `channel`, `confidence`, `engagement`, `article_url` |
 
-The report flags high-score posts a rule dropped (possible false negatives),
-low-score posts that were posted (possible false positives), and high-score items
-cut by `POSTS_PER_CYCLE`. After editing a rule, run `replay` to confirm it changes
-what you intended and nothing else, then deploy.
+`cycle_decisions` values:
+- `stage=filter`: `reason` is `kept` or the rule that dropped it -- `meta_thread`,
+  `stickied`, `image_link`, `community_discussion`, `low_score`
+- `stage=consolidate`: `merged into <post_id>` (same story, other subreddit)
+- `stage=dedup`: `duplicate` (already posted, or same story this cycle)
+- `stage=cap`: `over_cap` (cut by `POSTS_PER_CYCLE`)
+- `stage=post`: `reason` is the channel (`news` / `review` / `trailer`)
+
+Useful questions to ask of it: high-score posts dropped by a filter rule (rule
+too broad), low-score posts that were posted (rule missing), high-score items
+cut by `over_cap`. All rows of one cycle share `cycle_started_at`.
+
+After editing a filter rule, `python -m bc_bot.replay` re-runs the archived
+Devvit payloads through the current rules and lists which decisions would change.
 
 Tests: `python -m unittest discover -s tests`
 

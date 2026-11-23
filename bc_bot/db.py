@@ -29,7 +29,7 @@ CREATE INDEX IF NOT EXISTS idx_cycle_raw_feeds_cycle_started_at ON cycle_raw_fee
 
 -- One row per post per cycle: which rule/stage decided its fate. Joined with
 -- cycle_raw_feeds (the exact input) this is what the weekly review reads
--- (python -m bc_bot.report / bc_bot.replay).
+-- (directly, or via python -m bc_bot.replay).
 CREATE TABLE IF NOT EXISTS cycle_decisions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     cycle_started_at TEXT NOT NULL,

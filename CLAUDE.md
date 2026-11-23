@@ -28,7 +28,7 @@ python -m bc_bot.dry_run
 
 Offline single cycle against a saved Devvit payload (no Reddit network access; RSS news feeds are still fetched): `python -m bc_bot.dry_run --ingest-file tests/fixtures/ingest_sample.json`.
 
-Weekly review tools: `python -m bc_bot.report` (decisions summary) and `python -m bc_bot.replay` (re-run archived Devvit payloads through current filter rules, list changed decisions).
+Weekly review is done by reading the DB directly (`cycle_decisions`, `cycle_raw_feeds`, `posted_items`; see README "Weekly review" for columns and reason values). `python -m bc_bot.replay` re-runs archived Devvit payloads through the current filter rules and lists changed decisions.
 
 Tests (stdlib unittest, no extra deps): `python -m unittest discover -s tests`. No linter or type-checker is configured.
 
