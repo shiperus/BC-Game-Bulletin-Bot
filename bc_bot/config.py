@@ -119,6 +119,12 @@ class Config:
         default_factory=lambda: _env_or_default("INGEST_FALLBACK_TO_RSS", "true").strip().lower()
         in ("1", "true", "yes")
     )
+    # Align bot cycles to the Devvit ingest cron ("0 */4 * * *"): run each cycle
+    # this many minutes after the slot (UTC 00/04/08/12/16/20) so posts go out
+    # shortly after a fresh payload lands. Ignored by the RSS source.
+    ingest_cycle_minute_offset: int = field(
+        default_factory=lambda: int(_env_or_default("INGEST_CYCLE_MINUTE_OFFSET", "5"))
+    )
 
     # Score-based rules; only apply to posts with a known score (Devvit source).
     # MIN_SCORE: drop posts below it (0 disables). RANK_BY_SCORE: within the same

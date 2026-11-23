@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from datetime import datetime, timedelta, timezone
 
 import discord
-from discord.ext import tasks
 
 from bc_bot import pipeline
 from bc_bot.config import Config
@@ -13,16 +13,56 @@ from bc_bot.models import TrendingItem
 
 logger = logging.getLogger(__name__)
 
+# UTC hours at which the bc-bulletin Devvit app posts an ingest payload
+# (devvit.json scheduler: cron "0 */4 * * *").
+INGEST_SLOT_HOURS = (0, 4, 8, 12, 16, 20)
+
+
+def seconds_until_next_ingest_cycle(now: datetime, minute_offset: int = 5) -> float:
+    """Seconds until the next ingest-aligned cycle: ``minute_offset`` minutes past
+    the next 4-hour slot (UTC 00/04/08/12/16/20), matching the Devvit app's
+    ``0 */4 * * *`` cron so the bot posts shortly after each payload lands."""
+    for hour in INGEST_SLOT_HOURS:
+        candidate = now.replace(hour=hour, minute=minute_offset, second=0, microsecond=0)
+        if candidate > now:
+            return (candidate - now).total_seconds()
+    candidate = (now + timedelta(days=1)).replace(
+        hour=0, minute=minute_offset, second=0, microsecond=0
+    )
+    return (candidate - now).total_seconds()
+
 
 class BcGamingBot(discord.Client):
     def __init__(self, config: Config, store: Store) -> None:
         super().__init__(intents=discord.Intents.default())
         self.config = config
         self.store = store
-        self.cycle_task = tasks.loop(hours=config.check_interval_hours)(self._run_cycle_safe)
+        self.cycle_task: asyncio.Task | None = None
 
     async def setup_hook(self) -> None:
-        self.cycle_task.start()
+        self.cycle_task = asyncio.create_task(self._cycle_loop())
+
+    async def _cycle_loop(self) -> None:
+        """Run cycles on the configured cadence.
+
+        With the Devvit ingest source, align each cycle to the bc-bulletin app's
+        ingest cron (every 4h at UTC 00/04/08/12/16/20 plus
+        INGEST_CYCLE_MINUTE_OFFSET), so posts go out a few minutes after each
+        payload lands. With the RSS source, preserve the historical behaviour:
+        first cycle immediately, then every CHECK_INTERVAL_HOURS.
+        """
+        if self.config.reddit_source == "devvit":
+            while True:
+                delay = seconds_until_next_ingest_cycle(
+                    datetime.now(timezone.utc), self.config.ingest_cycle_minute_offset
+                )
+                logger.info("Next ingest-aligned cycle in %.0fs (%.1f min)", delay, delay / 60)
+                await asyncio.sleep(delay)
+                await self._run_cycle_safe()
+        else:
+            while True:
+                await self._run_cycle_safe()
+                await asyncio.sleep(self.config.check_interval_hours * 3600)
 
     async def on_ready(self) -> None:
         logger.info("Logged in as %s", self.user)
