@@ -13,6 +13,19 @@ each go to their own channel. A local SQLite database remembers what was
 already posted, so the same story never shows up twice — even if it's
 reworded. Lightweight enough to run 24/7 on a Raspberry Pi.
 
+## Repository layout
+
+```
+bc_bot/        Discord bot (Python) -- runs on the Raspberry Pi
+tests/         Bot unit tests + a real Devvit payload fixture
+deploy/        systemd unit for the Pi
+devvit/        bc-bulletin Devvit app (TypeScript) -- runs on Reddit; see devvit/README.md
+```
+
+The two halves only talk through the `ingest.json` payload the Devvit app posts to
+a private Discord channel (see "Devvit source" below and `devvit/README.md`). The
+bot works without the Devvit app (`REDDIT_SOURCE=rss`, the default).
+
 ## Setup
 
 1. Create and activate a virtualenv, then install dependencies:
@@ -57,7 +70,54 @@ production across cycles) but never touches Discord. `DISCORD_TOKEN` /
 
 ```
 python -m bc_bot.dry_run
+python -m bc_bot.dry_run --once                                      # one cycle, then exit
+python -m bc_bot.dry_run --ingest-file tests/fixtures/ingest_sample.json   # offline, no network for Reddit
 ```
+
+Set `DB_PATH=bc_bot_test.db` in `.env` while testing so dry-run "posts" don't
+pollute the production dedup history.
+
+## Devvit source (optional)
+
+With `REDDIT_SOURCE=devvit`, hot posts come from the **bc-bulletin** Devvit app
+instead of the RSS feeds. The app runs on Reddit, reads hot posts through
+Reddit's own API every 4h (real scores, comment counts, post bodies, stickied
+flags) and posts them as an `ingest.json` attachment to a private Discord channel
+via webhook. Each cycle the bot reads the newest unprocessed payload from that
+channel over Discord's REST API, then runs the exact same filter → consolidate →
+enrich → rank → dedup pipeline. If no fresh payload exists (older than
+`INGEST_MAX_AGE_HOURS`), it falls back to RSS for that cycle.
+
+Setup:
+1. In the Discord developer portal, enable the bot's **Message Content intent**
+   (Bot → Privileged Gateway Intents), otherwise webhook messages come back empty.
+2. Give the bot *View Channel* + *Read Message History* on the ingest channel.
+3. Set `REDDIT_SOURCE=devvit` and `DISCORD_INGEST_CHANNEL_ID=<channel id>`.
+
+For text-only posts (e.g. r/GamingLeaksAndRumours) the source link is extracted
+from the post body (`[Source](...)` first, then the first non-Reddit/media/store
+link, YouTube as a last resort), so the posted link is the article rather than
+the comments page.
+
+## Weekly review
+
+Every cycle stores its raw input (`cycle_raw_feeds`) and one decision per post
+(`cycle_decisions`: which filter rule dropped it, merged, duplicate, over the
+per-cycle cap, or posted).
+
+```
+python -m bc_bot.report              # what happened in the last 7 days
+python -m bc_bot.report --days 14 --high-score 1000
+python -m bc_bot.replay              # re-run archived Devvit payloads through the
+                                     # current rules and list decisions that change
+```
+
+The report flags high-score posts a rule dropped (possible false negatives),
+low-score posts that were posted (possible false positives), and high-score items
+cut by `POSTS_PER_CYCLE`. After editing a rule, run `replay` to confirm it changes
+what you intended and nothing else, then deploy.
+
+Tests: `python -m unittest discover -s tests`
 
 ## How it works
 
@@ -140,3 +200,10 @@ crashing.
 | `RETENTION_DAYS` | `30` | How long posted-item history (and dedup window) is kept |
 | `POSTS_PER_CYCLE` | `5` | Max news items posted per cycle to `DISCORD_NEWS_CHANNEL_ID` (review, trailer items aren't capped) |
 | `DB_PATH` | `bc_bot.db` | SQLite file location |
+| `REDDIT_SOURCE` | `rss` | `rss` or `devvit` (see "Devvit source") |
+| `DISCORD_INGEST_CHANNEL_ID` | — | Channel the Devvit app's webhook posts payloads to (required for `devvit`) |
+| `INGEST_MAX_AGE_HOURS` | `6` | Ignore payloads older than this |
+| `INGEST_FALLBACK_TO_RSS` | `true` | Use RSS when no fresh payload exists |
+| `MIN_SCORE` | `10` | Drop posts below this score (devvit only; `0` disables) |
+| `RANK_BY_SCORE` | `true` | Within equal confidence, rank by real score instead of feed position × weight (devvit only) |
+| `POPULAR_SCORE` | `1000` | +1 confidence at or above this score (devvit only; `0` disables) |

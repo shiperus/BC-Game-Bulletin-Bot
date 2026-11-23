@@ -23,6 +23,7 @@ def main() -> None:
     configure_logging()
     config = Config()
     config.require_discord_credentials()
+    config.require_ingest_settings()
     store = Store(config.db_path)
     bot = BcGamingBot(config, store)
     bot.run(config.discord_token)
