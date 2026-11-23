@@ -185,7 +185,8 @@ _ANNOUNCEMENT_PATTERNS = [
 _COVERAGE_PATTERNS = [
     re.compile(pattern, re.IGNORECASE)
     for pattern in [
-        r"\breview(s|ed)?\b",
+        # "review bombing" is a controversy/opinion topic, not review coverage.
+        r"\breview(s|ed)?\b(?![\s-]*bomb)",
         r"\bimpressions?\b",
         r"\bhands[- ]on\b",
         r"\bpreview(s|ed)?\b",
@@ -223,6 +224,8 @@ def consolidate(items: list[TrendingItem]) -> list[TrendingItem]:
         cluster.engagement += item.engagement
         cluster.sources.add(item.source)
         cluster.confidence = len(cluster.sources)
+        if item.post_id:
+            cluster.merged_post_ids.append(item.post_id)
 
     return clusters
 
@@ -246,6 +249,20 @@ def boost_announcements(items: list[TrendingItem]) -> None:
         if any(pattern.search(item.title) for pattern in _ANNOUNCEMENT_PATTERNS):
             item.confidence += 1
         if any(pattern.search(item.title) for pattern in _COVERAGE_PATTERNS):
+            item.confidence += 1
+
+
+def boost_popular(items: list[TrendingItem], threshold: int) -> None:
+    """+1 confidence for items whose Reddit score is at or above ``threshold``.
+
+    Confidence otherwise only counts title keywords and RSS corroboration, so a
+    51k-upvote story with a plain headline ranked below score-0 posts that happened
+    to match a keyword. Strong community traction is itself a corroboration signal.
+    Items without a known score (RSS source) are untouched; threshold <= 0 disables."""
+    if threshold <= 0:
+        return
+    for item in items:
+        if item.score is not None and item.score >= threshold:
             item.confidence += 1
 
 

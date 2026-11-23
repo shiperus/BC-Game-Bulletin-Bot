@@ -4,12 +4,13 @@ import logging
 import re
 import time
 import requests
+from dataclasses import dataclass
 from html import unescape
 
 import feedparser
 
 from bc_bot.config import Config
-from bc_bot.models import TrendingItem
+from bc_bot.models import PostDecision, TrendingItem
 
 logger = logging.getLogger(__name__)
 
@@ -613,7 +614,249 @@ def _is_community_discussion(title: str) -> bool:
     )
 
 
-def fetch_trending(config: Config) -> tuple[list[TrendingItem], dict[str, str]]:
+@dataclass
+class RawPost:
+    """One hot post, normalized from either source (RSS entry or Devvit payload) so
+    both run through exactly the same filter rules in build_item()."""
+
+    post_id: str | None
+    subreddit: str
+    title: str
+    comments_url: str
+    submitted_url: str | None
+    is_self_post: bool
+    body: str  # RSS: summary HTML; Devvit: selftext markdown
+    body_format: str  # "html" | "markdown"
+    rank: int  # 0-based position in the subreddit's hot listing
+    total: int  # number of posts fetched from that subreddit
+    stickied: bool = False
+    score: int | None = None
+    num_comments: int | None = None
+    flair: str | None = None
+
+
+def build_item(
+    post: RawPost, weight: float, *, min_score: int = 0, rank_by_score: bool = False
+) -> tuple[TrendingItem | None, str]:
+    """Apply the per-post filters. Returns (item, reason): item is None when the
+    post is filtered out, and reason names the rule that decided it ("kept" when it
+    survives). Rule order matches the original RSS loop so decisions stay identical.
+
+    min_score / rank_by_score only take effect when the post's score is known
+    (Devvit payloads); RSS posts have no score and keep the original behavior."""
+    title = post.title
+    submitted_url = post.submitted_url
+    is_self_post = post.is_self_post
+
+    if _is_meta_thread(title, is_self_post=is_self_post):
+        return None, "meta_thread"
+
+    # Devvit payload only (RSS has no such flag): pinned mod posts are always
+    # megathreads/rules/announcement hubs, never organic hot news.
+    if post.stickied:
+        return None, "stickied"
+
+    if submitted_url and not is_self_post and _is_image_link(submitted_url):
+        return None, "image_link"
+
+    is_review_thread = bool(_REVIEW_THREAD_PATTERN.search(title))
+    is_trailer_thread = bool(
+        submitted_url
+        and _TRAILER_TITLE_PATTERN.search(title)
+        and _YOUTUBE_HOST_PATTERN.search(submitted_url)
+    )
+    # A self-post community discussion (question/anecdote/list) is not
+    # reportable news. Only applies to unflagged self-posts, so leak/rumour
+    # news, review threads, and trailer posts are never suppressed.
+    if (
+        is_self_post
+        and not is_review_thread
+        and not is_trailer_thread
+        and _is_community_discussion(title)
+    ):
+        return None, "community_discussion"
+
+    # Posts nobody has upvoted (score 0 opinion threads, brand-new uploads) aren't
+    # trending yet. Checked last so structural reasons above stay visible in reports.
+    if post.score is not None and post.score < min_score:
+        return None, "low_score"
+
+    opencritic_stats = None
+    if is_review_thread:
+        if post.body_format == "markdown":
+            opencritic = _extract_opencritic_markdown(post.body)
+        else:
+            opencritic = _extract_opencritic(post.body)
+        item_url = opencritic[0] if opencritic else post.comments_url
+        opencritic_stats = opencritic[1] if opencritic else None
+    elif is_self_post and post.body_format == "markdown":
+        # Text-only subs (r/GamingLeaksAndRumours) put the source link in the body;
+        # link to it instead of the comments page when one can be found.
+        item_url = extract_source_url(post.body) or post.comments_url
+    else:
+        item_url = submitted_url or post.comments_url
+
+    if not title or not item_url:
+        return None, "missing_title_or_url"
+
+    if rank_by_score and post.score is not None:
+        # Real upvotes are comparable across subreddits on their own, so the
+        # position-based SUBREDDIT_WEIGHTS fudge isn't applied.
+        engagement = float(post.score)
+    else:
+        engagement = (post.total - post.rank) * weight
+
+    item = TrendingItem(
+        title=title,
+        url=item_url,
+        source="reddit",
+        engagement=engagement,
+        origin=f"r/{post.subreddit}",
+        skip_enrichment=is_review_thread or is_trailer_thread,
+        opencritic_stats=opencritic_stats,
+        raw_data_source=post.body,
+        is_trailer_thread=is_trailer_thread,
+        is_review_thread=is_review_thread,
+        post_id=post.post_id,
+        comments_url=post.comments_url,
+        score=post.score,
+        num_comments=post.num_comments,
+    )
+    return item, "kept"
+
+
+def filter_posts(
+    posts: list[RawPost], config: Config
+) -> tuple[list[TrendingItem], list[PostDecision]]:
+    """Run build_item over every post, returning surviving items plus one decision
+    record per post (kept or the rule that dropped it) for the weekly review."""
+    items: list[TrendingItem] = []
+    decisions: list[PostDecision] = []
+    skipped: dict[tuple[str, str], int] = {}
+    for post in posts:
+        item, reason = build_item(
+            post,
+            subreddit_weight(config, post.subreddit),
+            min_score=config.min_score,
+            rank_by_score=config.rank_by_score,
+        )
+        decisions.append(
+            PostDecision(
+                post_id=post.post_id,
+                subreddit=post.subreddit,
+                title=post.title,
+                stage="filter",
+                decision="kept" if item else "dropped",
+                reason=reason,
+                url=item.url if item else (post.submitted_url or post.comments_url),
+                score=post.score,
+                num_comments=post.num_comments,
+                flair=post.flair,
+            )
+        )
+        if item:
+            items.append(item)
+        else:
+            skipped[(post.subreddit, reason)] = skipped.get((post.subreddit, reason), 0) + 1
+
+    for (subreddit_name, reason), count in sorted(skipped.items()):
+        logger.info("r/%s: skipped %d post(s): %s", subreddit_name, count, reason)
+    return items, decisions
+
+
+def subreddit_weight(config: Config, subreddit_name: str) -> float:
+    weights = {name.lower(): w for name, w in config.subreddit_weights.items()}
+    return weights.get(subreddit_name.lower(), 1.0)
+
+
+# Markdown escapes Reddit adds inside selftext, e.g. "The\_Endless\_Museum" in a
+# Steam URL or "\[SPOILERS\]" in link text. Left in place they corrupt URLs.
+_MARKDOWN_ESCAPE_PATTERN = re.compile(r"\\([\\_\[\]()*~`>#+\-.!|{}])")
+_MARKDOWN_LINK_PATTERN = re.compile(r"\[((?:[^\[\]]|\[[^\]]*\])*)\]\((https?://[^)\s]+)\)")
+_BARE_URL_PATTERN = re.compile(r"https?://[^\s)\]<>\"]+")
+
+# Hosts that are never the *source* of a story: Reddit itself (crossposts, short
+# share links), community invites, store pages, and image/GIF hosts. YouTube is
+# only a last resort -- sometimes the leaked footage IS the source.
+_NON_SOURCE_HOST_PATTERN = re.compile(
+    r"^https?://(?:[a-z0-9-]+\.)*(?:reddit\.com|redd\.it|discord\.gg|discord\.com|"
+    r"store\.steampowered\.com|steamcommunity\.com|tenor\.com|giphy\.com|tumblr\.com|"
+    r"imgbox\.com|imgur\.com|testflight\.apple\.com|forms\.gle)(?:[/:?#]|$)",
+    re.IGNORECASE,
+)
+
+
+def unescape_markdown(text: str) -> str:
+    return _MARKDOWN_ESCAPE_PATTERN.sub(r"\1", text)
+
+
+def _markdown_links(body: str) -> list[tuple[str, str, int]]:
+    """Return (label, url, position) for every markdown and bare link, in order."""
+    found: list[tuple[str, str, int]] = []
+    covered: list[tuple[int, int]] = []
+    for match in _MARKDOWN_LINK_PATTERN.finditer(body):
+        found.append((match.group(1), match.group(2), match.start()))
+        covered.append(match.span())
+    for match in _BARE_URL_PATTERN.finditer(body):
+        if any(start <= match.start() < end for start, end in covered):
+            continue
+        found.append(("", match.group(0).rstrip(".,;:!?*"), match.start()))
+    found.sort(key=lambda link: link[2])
+    return found
+
+
+def extract_source_url(body: str) -> str | None:
+    """Pick the most likely source link from a self-post body: a link labelled (or
+    preceded by) "source" first, then the first non-Reddit/media/store link, then a
+    YouTube link as a last resort. None when nothing qualifies."""
+    if not body:
+        return None
+    text = unescape_markdown(body)
+    candidates: list[tuple[str, str, int]] = []
+    for label, url, position in _markdown_links(text):
+        if _NON_SOURCE_HOST_PATTERN.search(url) or _is_image_link(url):
+            continue
+        candidates.append((label, url, position))
+    if not candidates:
+        return None
+
+    for label, url, position in candidates:
+        preceding = text[max(0, position - 20) : position]
+        if "source" in label.lower() or "source" in preceding.lower():
+            return url
+    for _, url, _ in candidates:
+        if not _YOUTUBE_HOST_PATTERN.search(url):
+            return url
+    return candidates[0][1]
+
+
+_OPENCRITIC_MARKDOWN_PATTERN = re.compile(
+    r"\[([^\]]*)\]\((https://opencritic\.com/game/[^)\s]+)\)", re.IGNORECASE
+)
+
+
+def _extract_opencritic_markdown(body: str) -> tuple[str, str | None] | None:
+    """Markdown counterpart of _extract_opencritic() for Devvit selftext, e.g.
+    "[**OpenCritic - 88 average - 95% recommended - 58 reviews**](https://opencritic.com/game/...)"."""
+    match = _OPENCRITIC_MARKDOWN_PATTERN.search(unescape_markdown(body or ""))
+    if match is None:
+        return None
+    url = match.group(2)
+    link_text = match.group(1).replace("*", "").replace("_", " ")
+    stats_match = _OPENCRITIC_STATS_PATTERN.search(link_text)
+    if stats_match is None:
+        return url, None
+    parts = [f"OpenCritic {stats_match['avg']}"]
+    if stats_match["pct"]:
+        parts.append(f"{stats_match['pct']}% Recommended")
+    if stats_match["count"]:
+        parts.append(f"{stats_match['count']} Reviews")
+    return url, " · ".join(parts)
+
+
+def fetch_trending(
+    config: Config,
+) -> tuple[list[TrendingItem], dict[str, str], list[PostDecision]]:
     """Fetch hot posts via Reddit's public Atom feed (reddit.com/r/<sub>/hot/.rss).
 
     Reddit's official API now gates app creation behind an approval process, and the
@@ -621,9 +864,9 @@ def fetch_trending(config: Config) -> tuple[list[TrendingItem], dict[str, str]]:
     remain reachable. Atom entries don't carry score/comment counts, so engagement is
     approximated by feed position (already hot-ranked by Reddit).
     """
-    items: list[TrendingItem] = []
+    posts: list[RawPost] = []
     raw_feeds: dict[str, str] = {}
-    
+
     for index, subreddit_name in enumerate(config.subreddits):
         if index > 0:
             time.sleep(DELAY_BETWEEN_REQUESTS_SECONDS)
@@ -638,85 +881,34 @@ def fetch_trending(config: Config) -> tuple[list[TrendingItem], dict[str, str]]:
             if feed is None:
                 continue
 
-            skipped_meta_threads = 0
-            skipped_image_links = 0
-            skipped_community_discussion = 0
-            weight = config.subreddit_weights.get(subreddit_name, 1.0)
             total_feed_entries = len(feed.entries)
             for rank, entry in enumerate(feed.entries):
-                title = entry.get("title", "")
                 comments_url = entry.get("link", "")
-                submitted_url = _extract_submitted_url(entry.get("summary", ""))
+                summary = str(entry.get("summary", ""))
+                submitted_url = _extract_submitted_url(summary)
                 # Self-posts still get a "[link]" anchor in the RSS summary, but it just
                 # points back at the post's own comments page rather than an external
                 # article, so that case must still count as a self-post.
                 is_self_post = submitted_url is None or submitted_url.rstrip("/") == comments_url.rstrip("/")
-                if _is_meta_thread(title, is_self_post=is_self_post):
-                    skipped_meta_threads += 1
-                    continue
-
-                if submitted_url and not is_self_post and _is_image_link(submitted_url):
-                    skipped_image_links += 1
-                    continue
-
-                is_review_thread = bool(_REVIEW_THREAD_PATTERN.search(title))
-                is_trailer_thread = bool(submitted_url and _TRAILER_TITLE_PATTERN.search(title) and _YOUTUBE_HOST_PATTERN.search(submitted_url))
-                # A self-post community discussion (question/anecdote/list) is not
-                # reportable news. Only applies to unflagged self-posts, so leak/rumour
-                # news, review threads, and trailer posts are never suppressed.
-                if (
-                    is_self_post
-                    and not is_review_thread
-                    and not is_trailer_thread
-                    and _is_community_discussion(title)
-                ):
-                    skipped_community_discussion += 1
-                    continue
-                opencritic_stats = None
-                if is_review_thread:
-                    opencritic = _extract_opencritic(entry.get("summary", ""))
-                    item_url = opencritic[0] if opencritic else comments_url
-                    opencritic_stats = opencritic[1] if opencritic else None
-                else:
-                    item_url = submitted_url or comments_url
-
-                items.append(
-                    TrendingItem(
-                        title=title,
-                        url=item_url,
-                        source="reddit",
-                        engagement=(total_feed_entries - rank) * weight,
-                        origin=f"r/{subreddit_name}",
-                        skip_enrichment=is_review_thread or is_trailer_thread,
-                        opencritic_stats=opencritic_stats,
-                        raw_data_source=str(entry.get("summary", "")),
-                        is_trailer_thread=is_trailer_thread,
-                        is_review_thread=is_review_thread,
+                posts.append(
+                    RawPost(
+                        post_id=entry.get("id"),
+                        subreddit=subreddit_name,
+                        title=entry.get("title", ""),
+                        comments_url=comments_url,
+                        submitted_url=submitted_url,
+                        is_self_post=is_self_post,
+                        body=summary,
+                        body_format="html",
+                        rank=rank,
+                        total=total_feed_entries,
                     )
-                )
-
-            if skipped_meta_threads:
-                logger.info(
-                    "r/%s: skipped %d recurring meta-thread(s)",
-                    subreddit_name,
-                    skipped_meta_threads,
-                )
-            if skipped_image_links:
-                logger.info(
-                    "r/%s: skipped %d image/video link post(s)",
-                    subreddit_name,
-                    skipped_image_links,
-                )
-            if skipped_community_discussion:
-                logger.info(
-                    "r/%s: skipped %d self-post community-discussion thread(s)",
-                    subreddit_name,
-                    skipped_community_discussion,
                 )
         except Exception:
             logger.exception("Failed to fetch trending posts from r/%s", subreddit_name)
 
-    return [item for item in items if item.title and item.url], raw_feeds
+    items, decisions = filter_posts(posts, config)
+    return items, raw_feeds, decisions
 
 def flag_post_enrichment_trailers(items: list[TrendingItem]) -> None:
     """Re-classify items whose final (post-enrichment) link is a YouTube video with a

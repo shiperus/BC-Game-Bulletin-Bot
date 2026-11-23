@@ -101,6 +101,51 @@ class Config:
         default_factory=lambda: Path(_env_or_default("DB_PATH", "bc_bot.db"))
     )
 
+    # Where hot posts come from: "rss" (Reddit's public feeds, the original source)
+    # or "devvit" (JSON payloads the bc-bulletin Devvit app posts to a private
+    # Discord channel via webhook -- real scores, post bodies, stickied flags).
+    reddit_source: str = field(
+        default_factory=lambda: _env_or_default("REDDIT_SOURCE", "rss").strip().lower()
+    )
+    discord_ingest_channel_id: int = field(
+        default_factory=lambda: int(_env_or_default("DISCORD_INGEST_CHANNEL_ID", "0"))
+    )
+    # A payload older than this is treated as missing (the Devvit app stopped
+    # posting), so the cycle falls back to RSS instead of re-reading stale data.
+    ingest_max_age_hours: float = field(
+        default_factory=lambda: float(_env_or_default("INGEST_MAX_AGE_HOURS", "6"))
+    )
+    ingest_fallback_to_rss: bool = field(
+        default_factory=lambda: _env_or_default("INGEST_FALLBACK_TO_RSS", "true").strip().lower()
+        in ("1", "true", "yes")
+    )
+
+    # Score-based rules; only apply to posts with a known score (Devvit source).
+    # MIN_SCORE: drop posts below it (0 disables). RANK_BY_SCORE: within the same
+    # confidence, order by real upvotes instead of feed position x weight.
+    # POPULAR_SCORE: +1 confidence at or above it, so a story with massive
+    # community traction isn't outranked by low-score posts that merely picked up
+    # a keyword boost (0 disables).
+    min_score: int = field(default_factory=lambda: int(_env_or_default("MIN_SCORE", "10")))
+    rank_by_score: bool = field(
+        default_factory=lambda: _env_or_default("RANK_BY_SCORE", "true").strip().lower()
+        in ("1", "true", "yes")
+    )
+    popular_score: int = field(
+        default_factory=lambda: int(_env_or_default("POPULAR_SCORE", "1000"))
+    )
+
+    def require_ingest_settings(self) -> None:
+        if self.reddit_source not in ("rss", "devvit"):
+            raise RuntimeError(f"REDDIT_SOURCE must be 'rss' or 'devvit', got {self.reddit_source!r}")
+        if self.reddit_source == "devvit" and (
+            not self.discord_token or not self.discord_ingest_channel_id
+        ):
+            raise RuntimeError(
+                "REDDIT_SOURCE=devvit needs DISCORD_TOKEN and DISCORD_INGEST_CHANNEL_ID "
+                "(or run bc_bot.dry_run --ingest-file <payload.json> to test offline)"
+            )
+
     def require_discord_credentials(self) -> None:
         if not self.discord_token or not self.discord_news_channel_id or not self.discord_review_channel_id or not self.discord_trailer_channel_id:
             raise RuntimeError(

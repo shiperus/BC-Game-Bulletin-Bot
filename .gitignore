@@ -2,6 +2,15 @@
 __pycache__/
 *.pyc
 .env
-bc_bot.db
+.env.*
+!.env.example
+# All SQLite files (production bc_bot.db and any test DBs) -- they hold scraped post data
+*.db
+*.db-journal
+*.sqlite
 bc_bot.log*
 .claude/
+
+# Devvit app build output / deps (devvit/.gitignore covers these too)
+devvit/node_modules/
+devvit/dist/

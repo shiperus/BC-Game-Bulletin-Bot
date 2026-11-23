@@ -6,6 +6,8 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Iterator
 
+from bc_bot.models import PostDecision
+
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS posted_items (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -24,6 +26,31 @@ CREATE TABLE IF NOT EXISTS cycle_raw_feeds (
     raw_feed TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_cycle_raw_feeds_cycle_started_at ON cycle_raw_feeds (cycle_started_at);
+
+-- One row per post per cycle: which rule/stage decided its fate. Joined with
+-- cycle_raw_feeds (the exact input) this is what the weekly review reads
+-- (directly, or via python -m bc_bot.replay).
+CREATE TABLE IF NOT EXISTS cycle_decisions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    cycle_started_at TEXT NOT NULL,
+    reddit_source TEXT NOT NULL,
+    post_id TEXT,
+    subreddit TEXT NOT NULL,
+    title TEXT NOT NULL,
+    stage TEXT NOT NULL,
+    decision TEXT NOT NULL,
+    reason TEXT NOT NULL,
+    url TEXT,
+    score INTEGER,
+    num_comments INTEGER,
+    flair TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_cycle_decisions_cycle_started_at ON cycle_decisions (cycle_started_at);
+
+CREATE TABLE IF NOT EXISTS kv (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
 """
 
 # Debugging columns added after the initial release, capturing the full picture of
@@ -142,4 +169,64 @@ class Store:
         cutoff = (datetime.now(timezone.utc) - timedelta(days=retention_days)).isoformat()
         with self._connect() as conn:
             cursor = conn.execute("DELETE FROM cycle_raw_feeds WHERE cycle_started_at < ?", (cutoff,))
-            return cursor.rowcount
+            removed = cursor.rowcount
+            conn.execute("DELETE FROM cycle_decisions WHERE cycle_started_at < ?", (cutoff,))
+            return removed
+
+    def record_decisions(
+        self, cycle_started_at: str, reddit_source: str, decisions: list[PostDecision]
+    ) -> None:
+        with self._connect() as conn:
+            conn.executemany(
+                "INSERT INTO cycle_decisions (cycle_started_at, reddit_source, post_id, subreddit, "
+                "title, stage, decision, reason, url, score, num_comments, flair) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                [
+                    (
+                        cycle_started_at,
+                        reddit_source,
+                        d.post_id,
+                        d.subreddit,
+                        d.title,
+                        d.stage,
+                        d.decision,
+                        d.reason,
+                        d.url,
+                        d.score,
+                        d.num_comments,
+                        d.flair,
+                    )
+                    for d in decisions
+                ],
+            )
+
+    def decisions_since(self, days: float) -> list[sqlite3.Row]:
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+        with self._connect() as conn:
+            conn.row_factory = sqlite3.Row
+            return conn.execute(
+                "SELECT * FROM cycle_decisions WHERE cycle_started_at >= ? ORDER BY id", (cutoff,)
+            ).fetchall()
+
+    def raw_feeds_since(self, days: float) -> list[tuple[str, str, str]]:
+        """(cycle_started_at, subreddit, raw_feed) rows, oldest first."""
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+        with self._connect() as conn:
+            return conn.execute(
+                "SELECT cycle_started_at, subreddit, raw_feed FROM cycle_raw_feeds "
+                "WHERE cycle_started_at >= ? ORDER BY id",
+                (cutoff,),
+            ).fetchall()
+
+    def get_value(self, key: str) -> str | None:
+        with self._connect() as conn:
+            row = conn.execute("SELECT value FROM kv WHERE key = ?", (key,)).fetchone()
+        return row[0] if row else None
+
+    def set_value(self, key: str, value: str) -> None:
+        with self._connect() as conn:
+            conn.execute(
+                "INSERT INTO kv (key, value) VALUES (?, ?) "
+                "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                (key, value),
+            )
