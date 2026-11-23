@@ -74,8 +74,5 @@
   "scripts": {
     "dev": "vite build --watch",
     "build": "vite build"
-  },
-  "dev": {
-    "subreddit": "bc_bulletin_dev"
   }
 }

@@ -17,9 +17,12 @@ cd devvit
 npm install
 npm run login                                   # devvit login
 npx devvit settings set discordWebhookUrl       # paste the #bc-ingest webhook URL (stored as a secret)
-npm run dev                                     # playtest on the dev subreddit (devvit.json "dev")
+npx devvit playtest <your-test-subreddit>       # playtest on your own small test subreddit
 npm run deploy                                  # type-check + lint + upload a new version
 ```
+
+The test subreddit is intentionally not stored in `devvit.json`. If `devvit
+playtest` adds a `"dev": { "subreddit": ... }` block to it, don't commit that hunk.
 
 After `npm run deploy`, install the uploaded version on your subreddit so the
 scheduler keeps running without a playtest session.
