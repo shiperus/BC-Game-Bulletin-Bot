@@ -66,6 +66,11 @@ def collect_posts(
             logger.warning("No usable Devvit payload and RSS fallback is off; skipping cycle")
             return [], {}, [], "devvit", None
         logger.warning("No usable Devvit payload; falling back to RSS for this cycle")
+    else:
+        logger.warning(
+            "REDDIT_SOURCE=rss is deprecated (no scores, slow, rate-limited); "
+            "set REDDIT_SOURCE=devvit -- see README"
+        )
 
     items, raw_feeds, decisions = reddit.fetch_trending(config)
     return items, raw_feeds, decisions, "rss", None
