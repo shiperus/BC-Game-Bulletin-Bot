@@ -1,0 +1,81 @@
+{
+  "$schema": "https://developers.reddit.com/schema/config-file.v1.json",
+  "name": "bc-bulletin",
+  "post": {
+    "dir": "dist/client",
+    "entrypoints": {
+      "default": {
+        "inline": true,
+        "entry": "splash.html"
+      },
+      "game": {
+        "entry": "game.html"
+      }
+    }
+  },
+  "server": {
+    "dir": "dist/server",
+    "entry": "index.cjs"
+  },
+  "menu": {
+    "items": [
+      {
+        "label": "Create a new post",
+        "description": "bc-bulletin",
+        "location": "subreddit",
+        "forUserType": "moderator",
+        "endpoint": "/internal/menu/post-create"
+      },
+      {
+        "label": "Send test bulletin to Discord",
+        "description": "Fetch hot posts and send them to the ingest webhook",
+        "location": "subreddit",
+        "forUserType": "moderator",
+        "endpoint": "/internal/menu/test-ingest"
+      },
+      {
+        "label": "Example form",
+        "description": "Show a simple form",
+        "location": "subreddit",
+        "forUserType": "moderator",
+        "endpoint": "/internal/menu/example-form"
+      }
+    ]
+  },
+  "forms": {
+    "exampleForm": "/internal/form/example-submit"
+  },
+  "permissions": {
+    "http": {
+      "enable": true,
+      "domains": ["discord.com"]
+    }
+  },
+  "settings": {
+    "global": {
+      "discordWebhookUrl": {
+        "type": "string",
+        "label": "Discord webhook URL for #bc-ingest",
+        "isSecret": true
+      }
+    }
+  },
+  "scheduler": {
+    "tasks": {
+      "ingest": {
+        "endpoint": "/internal/scheduler/ingest",
+        "cron": "0 */4 * * *"
+      }
+    }
+  },
+  "triggers": {
+    "onAppInstall": "/internal/triggers/on-app-install"
+  },
+  "scripts": {
+    "dev": "vite build --watch",
+    "build": "vite build"
+  },
+  "dev": {
+    "subreddit": "bc_bulletin_dev"
+  }
+}

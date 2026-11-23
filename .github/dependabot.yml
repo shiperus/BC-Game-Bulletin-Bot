@@ -1,0 +1,31 @@
+version: 2
+updates:
+  # Devvit app (devvit/)
+  - package-ecosystem: "npm"
+    directory: "/devvit"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 10
+    ignore:
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
+    groups:
+      devvit:
+        patterns: ["devvit", "@devvit/*"]
+      eslint:
+        patterns: ["eslint", "@eslint/*", "typescript-eslint"]
+      vite:
+        patterns: ["vite", "@vitejs/*"]
+      tailwind:
+        patterns: ["tailwindcss", "@tailwindcss/*"]
+      react:
+        patterns: ["react", "react-dom", "@types/react", "@types/react-dom"]
+  # Discord bot (requirements.txt)
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
