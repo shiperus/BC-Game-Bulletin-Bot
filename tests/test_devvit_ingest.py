@@ -252,5 +252,19 @@ class PipelineTest(unittest.TestCase):
             self.assertEqual(len(store.raw_feeds_since(1)), 3)
 
 
+class CommunityDiscussionPatternTest(unittest.TestCase):
+    """Direct pattern-level checks for community-gripe self-posts that must be
+    dropped from the news channel (independent of the ingest fixture)."""
+
+    def test_slop_gripe_is_community_discussion(self) -> None:
+        # r/gaming rant caught in the audit data (id 2185): venting that a platform's
+        # update is "slop", not reportable news.
+        title = (
+            'Previously Beloved Game Platform "Humble Bundle" Releases '
+            "Slop Website Update that Breaks Security and Basic Functionality"
+        )
+        self.assertTrue(reddit._is_community_discussion(title))
+
+
 if __name__ == "__main__":
     unittest.main()
