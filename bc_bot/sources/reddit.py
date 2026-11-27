@@ -478,6 +478,12 @@ _DISCUSSION_PREFIX_PATTERN = re.compile(r"^\s*discussion\b\s*[:：]?", re.IGNORE
 # are punishing players instead of addressing the problem.") -- an opinion post, not a
 # report. Guarded to self-posts so an article headline with "ruining" (a link post) is safe.
 _RUINING_GRIPE_PATTERN = re.compile(r"\b(?:is|are) ruining\b", re.IGNORECASE)
+# A self-post venting about "slop" -- the gaming-community pejorative for low-effort /
+# AI-generated content ("Previously Beloved Game Platform 'Humble Bundle' Releases Slop
+# Website Update that Breaks Security and Basic Functionality") -- is a first-person
+# gripe, not reportable news. Guarded to self-posts at the call site, so a news-article
+# headline that happens to mention "slop" (a link post) is never suppressed.
+_SLOP_GRIPE_PATTERN = re.compile(r"\bslop\b", re.IGNORECASE)
 # A survey soliciting examples ("Examples of video game franchises where they took on
 # feedback...?") -- the OP asks the community to enumerate titles, not a report.
 _EXAMPLES_OF_PATTERN = re.compile(r"^\s*examples? of\b", re.IGNORECASE)
@@ -598,6 +604,7 @@ def _is_community_discussion(title: str) -> bool:
         or _THAT_ONE_PATTERN.search(t) is not None
         or _DISCUSSION_PREFIX_PATTERN.search(t) is not None
         or _RUINING_GRIPE_PATTERN.search(t) is not None
+        or _SLOP_GRIPE_PATTERN.search(t) is not None
         or _EXAMPLES_OF_PATTERN.search(t) is not None
         or _LOOK_BACK_PATTERN.search(t) is not None
         or _A_REVIEW_OF_PATTERN.search(t) is not None
